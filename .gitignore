@@ -1,0 +1,11 @@
+# secrets — never commit tokens
+bench.yaml
+
+# generated output
+*.pdf
+
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/

@@ -1,0 +1,27 @@
+# Copy to bench.yaml and fill in.  bench.yaml is git-ignored (it holds tokens).
+#
+# One machine runs this. The heavy scan happens ONCE per target; the burst is
+# then N cheap re-submissions, so the Compute Engine — not the scanner — is the
+# bottleneck being measured.
+
+seed_repo: ./sample-project        # repo scanned ONCE per target. Use a REPRESENTATIVE
+                                   # repo for realistic CE task sizes (the bundled sample
+                                   # is tiny — fine only for a smoke test).
+n: 40                              # burst size: analyses fired at once
+concurrency: 12                    # parallel submissions
+scanner: sonar-scanner             # path to the SonarScanner CLI (must be on PATH or absolute)
+namespace: bench                   # project-key prefix; every bench project uses it and is
+                                   # deleted afterwards (set keep_projects: true to keep them)
+report: ./sq-dce-benchmark-report.pdf
+# keep_projects: false
+# exclusions: "**/node_modules/**,**/dist/**,**/*.min.js"
+
+targets:
+  - name: EE
+    url: https://sonarqube-ee.example.com
+    token: squ_xxxxxxxxxxxxxxxxxxxxxxxx
+    workers: 6                     # informational only (set the real count in the UI)
+  - name: DCE
+    url: https://sonarqube-dce.example.com
+    token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
+    workers: 12
