@@ -77,7 +77,10 @@ python3 sq_bench.py cleanup --config bench.yaml
   heap** (~1–2 GB). Undersized heap causes failures that look like "DCE is slow".
 - **DCE app nodes on separate hosts** — DCE's throughput advantage comes from adding
   machines; all-nodes-on-one-VM cannot out-throughput EE.
-- Decide the worker comparison up front, e.g. **EE 6 workers vs DCE 12** (4/node × 3).
+- Decide the worker comparison up front, e.g. **EE 6 workers vs DCE 12** (4/node × 3), and
+  set it in each instance's UI beforehand. The tool **auto-detects** the real worker count
+  (`api/ce/worker_count` × application nodes) and prints/reports it — the config `workers`
+  field is optional and only overrides the report label.
 - Run **off-peak**; it creates real CE/DB/ES load and `bench-*` projects (auto-deleted).
 - Use a **dedicated service token**; disable webhooks on the bench namespace if the
   instance is wired to CI/Slack/Jira.

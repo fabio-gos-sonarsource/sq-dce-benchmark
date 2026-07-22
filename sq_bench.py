@@ -84,6 +84,26 @@ def fetch_profiles(t):
     return {q["language"]: q["key"] for q in get(t, "/api/qualityprofiles/search",
                                                  defaults="true").json().get("profiles", [])}
 
+def detect_workers(t):
+    """Read the REAL CE worker count from the instance: per-node × application nodes."""
+    try:
+        per = get(t, "/api/ce/worker_count").json().get("value")
+    except Exception:
+        per = None
+    if per is None:
+        return None
+    nodes = 1
+    try:
+        app = [n for n in get(t, "/api/system/health").json().get("nodes", [])
+               if n.get("type") == "APPLICATION"]
+        if app:
+            nodes = len(app)
+    except Exception:
+        pass
+    total = per * nodes
+    return dict(per_node=per, app_nodes=nodes, total=total,
+               detail=(f"{total} ({per}/node × {nodes})" if nodes > 1 else str(total)))
+
 def patch_report(report_dir, new_key, date_ms, profiles):
     """Re-key a copied report so it can be replayed as a different project on this server."""
     md_path = os.path.join(report_dir, "metadata.pb")
@@ -257,7 +277,7 @@ def generate_report(cfg, results):
     f1 = lambda v: "—" if v is None else f"{v:.1f}"
     f0 = lambda v: "—" if v is None else f"{v:.0f}"
     data = [hdr,
-            row("Workers", "workers", lambda v: str(v)),
+            ["Workers (detected)"] + [str(results[n].get("workers_detail", results[n].get("workers", "?"))) for n in names],
             row("Tasks OK", "ok", lambda v: str(v)),
             row("Queue drain (s)", "drain", f0),
             row("Throughput (tasks/hr)", "thr", f0),
@@ -295,6 +315,10 @@ def run_target(t, cfg):
     print("  scanning seed once ...")
     rep = scan_seed(t, cfg, work)
     profiles = fetch_profiles(t)
+    w = detect_workers(t)
+    w_total = w["total"] if w else t.get("workers", "?")
+    w_detail = w["detail"] if w else str(t.get("workers", "?"))
+    print(f"  detected CE workers: {w_detail}")
 
     print("  validating one replay ...")
     vkey = f"{ns}-000000"
@@ -322,7 +346,8 @@ def run_target(t, cfg):
     wait_drain(t)
     time.sleep(2); smp.stop = True; smp.join(timeout=3)
 
-    m = collect(t, ns); m.update(queue_stats(csvp)); m["workers"] = t.get("workers", "?")
+    m = collect(t, ns); m.update(queue_stats(csvp))
+    m["workers"] = w_total; m["workers_detail"] = w_detail
     print(f"  → {m.get('ok',0)}/{m.get('n',0)} ok | drain {m.get('drain',0):.0f}s | "
           f"wait avg {m.get('wait_avg',0):.1f}s p95 {m.get('wait_p95',0):.0f}s | "
           f"queue avg {m.get('q_avg',0):.1f} peak {m.get('q_peak',0):.0f}")

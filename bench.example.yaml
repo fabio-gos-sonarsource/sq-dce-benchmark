@@ -21,8 +21,8 @@ targets:
   - name: EE
     url: https://sonarqube-ee.example.com
     token: squ_xxxxxxxxxxxxxxxxxxxxxxxx
-    workers: 6                     # informational only (set the real count in the UI)
+  # workers: 6                    # OPTIONAL — auto-detected from the instance; set only to override the report label
   - name: DCE
     url: https://sonarqube-dce.example.com
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
-    workers: 12
+  # workers: 12                   # OPTIONAL — auto-detected
