@@ -21,7 +21,7 @@ Usage:
     python3 sq_bench.py run     --config bench.yaml
     python3 sq_bench.py cleanup --config bench.yaml
 """
-import argparse, os, sys, time, glob, shutil, subprocess, tempfile, threading, csv, re
+import argparse, os, sys, time, glob, shutil, subprocess, tempfile, threading, csv, re, json
 import datetime as dt
 import concurrent.futures as cf
 
@@ -331,12 +331,30 @@ def run_target(t, cfg):
         shutil.rmtree(stage, ignore_errors=True)
     return m
 
-def cmd_run(cfg):
+def cmd_run(cfg, only=None):
     global PB
     PB = load_proto()
     print("⚠  Non-production benchmark — replaying internal report format via api/ce/submit.")
-    results = {t["name"]: run_target(t, cfg) for t in cfg["targets"]}
+    rf = cfg.get("results_file", "results.json")
+    results = {}
+    if os.path.exists(rf):
+        try:
+            results = json.load(open(rf))           # accumulate across independent runs
+        except Exception:
+            results = {}
+    targets = [t for t in cfg["targets"] if only in (None, t["name"])]
+    if not targets:
+        sys.exit(f"no target named '{only}' in config")
+    for t in targets:
+        results[t["name"]] = run_target(t, cfg)
+    json.dump(results, open(rf, "w"), indent=2)
     generate_report(cfg, results)
+
+def cmd_report(cfg):
+    rf = cfg.get("results_file", "results.json")
+    if not os.path.exists(rf):
+        sys.exit(f"no results file: {rf}")
+    generate_report(cfg, json.load(open(rf)))
 
 def cmd_cleanup(cfg):
     for t in cfg["targets"]:
@@ -354,11 +372,17 @@ def load_config(path):
 
 def main():
     ap = argparse.ArgumentParser(description="SonarQube EE vs DCE Compute Engine throughput benchmark")
-    ap.add_argument("command", choices=["run", "cleanup"])
+    ap.add_argument("command", choices=["run", "cleanup", "report"])
     ap.add_argument("--config", required=True)
+    ap.add_argument("--only", help="run only this target (accumulates into results_file for a combined report)")
     a = ap.parse_args()
     cfg = load_config(a.config)
-    (cmd_run if a.command == "run" else cmd_cleanup)(cfg)
+    if a.command == "run":
+        cmd_run(cfg, a.only)
+    elif a.command == "cleanup":
+        cmd_cleanup(cfg)
+    else:
+        cmd_report(cfg)
 
 if __name__ == "__main__":
     main()

@@ -53,6 +53,17 @@ differ) → pre-create N projects → replay N in parallel while sampling the qu
 second → collect `api/ce/activity` metrics → delete the bench projects. Then it writes
 the comparison **PDF** (`report:` path).
 
+### Run targets independently (recommended when EE and DCE share hardware)
+
+If both instances aren't on separate hardware, run each **on its own** so they don't
+compete for CPU — results accumulate into `results_file` and the report combines them:
+
+```bash
+python3 sq_bench.py run    --config bench.yaml --only EE     # (DCE idle/stopped)
+python3 sq_bench.py run    --config bench.yaml --only DCE    # (EE idle/stopped)
+python3 sq_bench.py report --config bench.yaml               # combined PDF from results.json
+```
+
 Clean up anytime (e.g. after an interrupted run):
 
 ```bash

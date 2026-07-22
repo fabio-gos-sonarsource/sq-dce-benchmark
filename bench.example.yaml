@@ -13,6 +13,7 @@ scanner: sonar-scanner             # path to the SonarScanner CLI (must be on PA
 namespace: bench                   # project-key prefix; every bench project uses it and is
                                    # deleted afterwards (set keep_projects: true to keep them)
 report: ./sq-dce-benchmark-report.pdf
+results_file: ./results.json       # metrics are saved here; independent runs accumulate
 # keep_projects: false
 # exclusions: "**/node_modules/**,**/dist/**,**/*.min.js"
 
