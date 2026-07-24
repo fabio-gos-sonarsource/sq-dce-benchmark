@@ -92,6 +92,11 @@ def _find_report(*roots):
 def _props(cfg):
     return [f"-D{k}={v}" for k, v in (cfg.get("scanner_props") or {}).items()]
 
+def _build_args(cfg):
+    """Extra args passed to maven/gradle (e.g. '-P profile' or '-pl backend -am')."""
+    import shlex
+    return shlex.split(cfg.get("build_args") or "")
+
 def produce_seed_report(t, cfg, workdir):
     """Scan the seed project ONCE with the appropriate scanner; return its scanner-report dir."""
     seed = cfg["seed_repo"]; key = cfg["namespace"] + "-seed"
@@ -107,12 +112,12 @@ def produce_seed_report(t, cfg, workdir):
               "-Dsonar.scanner.keepReport=true", "-Dsonar.scm.disabled=true"] + _props(cfg)
     if mode == "maven":
         # fully-qualified goal so it works without the sonar pluginGroup in settings.xml
-        cmd = [cfg.get("maven", "mvn"), "-B", "-DskipTests", "verify",
+        cmd = [cfg.get("maven", "mvn"), "-B"] + _build_args(cfg) + ["-DskipTests", "verify",
                "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar"] + common
         cwd, roots = seed, [os.path.join(seed, "target"), seed, workdir]
     elif mode == "gradle":
         gw = cfg.get("gradle") or ("./gradlew" if os.path.exists(os.path.join(seed, "gradlew")) else "gradle")
-        cmd = [gw, "build", "sonar", "-x", "test"] + common
+        cmd = [gw] + _build_args(cfg) + ["build", "sonar", "-x", "test"] + common
         cwd, roots = seed, [os.path.join(seed, "build"), seed, workdir]
     else:  # cli — source-analysed languages (JS/TS/Python/Go/PHP/HTML/…)
         cmd = [cfg.get("scanner_cli") or cfg.get("scanner", "sonar-scanner"),

@@ -52,6 +52,11 @@ If your project targets a specific JDK (common with Lombok or older codebases), 
 `java_home:` in `bench.yaml` — the tool builds/scans the seed with that JDK
 (`JAVA_HOME` + its `bin` on `PATH`) instead of the default `java` on `PATH`.
 
+If your project needs a build **profile** or module selection to build (e.g. a
+corporate Artifactory mirror profile, or building only some modules), pass it via
+`build_args:` — the string is inserted into the `mvn`/`gradle` command, e.g.
+`build_args: "-P artifactory"` or `build_args: "-pl backend -am"`.
+
 ## What you need (one machine)
 
 - **Python 3.9+** and the deps in `requirements.txt`
