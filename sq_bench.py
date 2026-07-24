@@ -492,7 +492,7 @@ def run_target(t, cfg):
     m["app_nodes"] = w["app_nodes"] if w else 1
     print(f"  → {m.get('ok',0)}/{m.get('n',0)} ok | drain {m.get('drain',0):.0f}s | "
           f"wait avg {m.get('wait_avg',0):.1f}s p95 {m.get('wait_p95',0):.0f}s | "
-          f"queue avg {m.get('q_avg',0):.1f} peak {m.get('q_peak',0):.0f}")
+          f"throughput {m.get('thr',0):.0f}/hr")
     if not cfg.get("keep_projects"):
         post(t, "/api/projects/bulk_delete", q=ns)
         shutil.rmtree(stage, ignore_errors=True)
