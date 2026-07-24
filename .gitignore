@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# seed repos dropped into the folder must not be committed
+/juice-shop/
