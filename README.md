@@ -160,6 +160,25 @@ production hardware — where nodes don't share CPUs — the gap is larger still
 A PDF with a side-by-side metrics table (drain time, throughput, avg/p95 queue wait,
 avg/peak queue size, CE time per task) and a **queue-size-over-time** chart.
 
+### Production model (optional)
+
+If you add a `model:` block to `bench.yaml`, the report also includes a **production
+model**: it takes the *measured* CE time per analysis and each target's *auto-detected*
+workers/nodes, and projects the **average feedback delay vs. load** for a developer
+population you choose:
+
+```yaml
+model:
+  devs: 5000               # developer population
+  analyses_per_dev_day: 8  # PRs, branches, CI per dev/day
+  peak_fraction: 0.15      # share landing in the peak hour
+```
+
+It renders the assumptions (e.g. *5,000 devs × 8/day = 40,000/day; ~15% peak ≈ 6,000/hr*),
+a capacity/utilisation/feedback-delay table per configuration (including a DCE "headroom"
+row at more workers/node), and a chart marking where a single EE node saturates while the
+DCE cluster stays near zero. Change `devs` and re-run `report` to re-model instantly.
+
 ## Files
 
 | File | Purpose |

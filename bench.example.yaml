@@ -14,6 +14,15 @@ namespace: bench                   # project-key prefix; every bench project use
                                    # deleted afterwards (set keep_projects: true to keep them)
 report: ./sq-dce-benchmark-report.pdf
 results_file: ./results.json       # metrics are saved here; independent runs accumulate
+
+# Optional production model: extrapolates the measured CE time to a developer
+# population and adds a "feedback delay vs load" chart + capacity table to the PDF.
+# Uses the auto-detected workers/nodes per target. Omit this block to skip it.
+model:
+  devs: 5000                       # developer population to model
+  analyses_per_dev_day: 8          # analyses each dev triggers/day (PRs, branches, CI)
+  peak_fraction: 0.15              # share of daily analyses landing in the peak hour
+  # ce_seconds: 5.0                # optional; default = measured CE time from this run
 # keep_projects: false
 # exclusions: "**/node_modules/**,**/dist/**,**/*.min.js"
 

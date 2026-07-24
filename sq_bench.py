@@ -230,6 +230,8 @@ def queue_stats(csv_path):
 def generate_report(cfg, results):
     import matplotlib; matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.ticker import FuncFormatter
+    import numpy as np
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
     from reportlab.lib import colors
@@ -239,7 +241,9 @@ def generate_report(cfg, results):
     INK="#22303C"; MUT="#7A8A99"; GRID="#DDE4EA"; PAL=["#E8833A","#1F8FD6","#2F9E6E","#9B59B6"]
     A = tempfile.mkdtemp(prefix="sqbench_rep_")
     names = list(results.keys())
-    cols = {n: PAL[i % len(PAL)] for i, n in enumerate(names)}
+    # deterministic colours: fewest workers (the constrained/EE-like config) = first palette colour
+    order = sorted(names, key=lambda n: (results[n].get("workers") or 0))
+    cols = {n: PAL[i % len(PAL)] for i, n in enumerate(order)}
     plt.rcParams.update({"font.size":11,"axes.edgecolor":MUT,"axes.labelcolor":INK,"text.color":INK,
                          "xtick.color":MUT,"ytick.color":MUT,"axes.grid":True,"grid.color":GRID,"figure.dpi":150})
 
@@ -297,6 +301,77 @@ def generate_report(cfg, results):
         "instant re-submissions) so the Compute Engine — not the scanner — is the bottleneck. Lower is better on "
         "every row. A cluster with more workers across nodes drains the queue faster and keeps developer wait low.",
         SMALL))
+
+    # ---------- optional production model (configurable dev count) ----------
+    mdl = cfg.get("model") or {}
+    if mdl.get("devs"):
+        devs = int(mdl["devs"]); apd = mdl.get("analyses_per_dev_day", 8); pf = mdl.get("peak_fraction", 0.15)
+        daily = devs * apd; peak = daily * pf
+        if mdl.get("ce_seconds"):
+            T = float(mdl["ce_seconds"])                       # optional override
+        else:                                                  # else: measured, least-contended target
+            base = min(results.values(), key=lambda v: (v.get("workers") or 1))
+            T = base.get("proc_avg") or 5.0
+        def cap(w): return w * 3600.0 / T
+        def dmin(lam, w):
+            c = cap(w); return 0.0 if lam <= c else (lam - c) / (2 * c) * 60.0
+
+        lam = np.linspace(0, peak * 2, 400)
+        top = max(30.0, max(dmin(peak * 2, results[n].get("workers") or 1) for n in names) * 1.1)
+        fm, ax2 = plt.subplots(figsize=(6.6, 3.6))
+        for n in names:
+            w = results[n].get("workers") or 1
+            ax2.plot(lam, [dmin(x, w) for x in lam], color=cols[n], lw=2.4,
+                     label=f"{n} — {results[n].get('workers','?')} workers")
+        ax2.axvline(peak, color=INK, ls="--", lw=1.1)
+        ax2.annotate(f"{devs:,}-dev peak\n≈{peak:,.0f}/hr", xy=(peak, top * 0.22),
+                     xytext=(peak * 0.42, top * 0.62), fontsize=8.5, color=INK,
+                     arrowprops=dict(arrowstyle="->", color=INK, lw=1))
+        for n in names:
+            w = results[n].get("workers") or 1; d = dmin(peak, w); short = n.split("-")[0]
+            lbl = f"{short} ≈ {d:.0f} min" if d >= 1 else f"{short} ≈ 0 s"
+            ax2.annotate(lbl, xy=(peak, d), xytext=(peak * 1.04, max(top * 0.05, min(d + top * 0.06, top * 0.9))),
+                         fontsize=9, color=cols[n], weight="bold")
+        ax2.set_xlabel("peak analysis submission rate (analyses/hour)"); ax2.set_ylabel("avg feedback delay (min)")
+        ax2.set_ylim(0, top); ax2.set_xlim(0, peak * 2)
+        ax2.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v/1000:.0f}k"))
+        ax2.set_title(f"Production model at {devs:,} developers — avg feedback delay vs load", fontsize=10.5, pad=8)
+        ax2.legend(frameon=False, fontsize=9, loc="upper left")
+        for sp in ("top", "right"): ax2.spines[sp].set_visible(False)
+        fm.tight_layout(); fm.savefig(f"{A}/model.png", bbox_inches="tight"); plt.close(fm)
+
+        E.append(HRFlowable(width="100%", color=colors.HexColor(GRID), spaceBefore=6, spaceAfter=6))
+        E.append(Paragraph(f"Production model — {devs:,} developers", H2))
+        E.append(Paragraph(
+            f"Assumptions: {devs:,} developers × {apd} analyses/day = {daily:,}/day; ~{int(pf*100)}% land in the peak "
+            f"hour ≈ <b>{peak:,.0f} analyses/hr</b>; measured <b>{T:.1f}s</b>/analysis (from this run). "
+            "Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
+            BODY))
+        mrows = [["Configuration", "Peak capacity", "Utilisation", "Avg feedback delay"]]
+        def add_row(label, w):
+            c = cap(w); u = peak / c * 100; d = dmin(peak, w); mx = (peak - c) / c * 60 if peak > c else 0
+            delay = f"~{d:.0f} min (max ~{mx:.0f} min)" if d >= 1 else "< 1 s"
+            mrows.append([label, f"{c:,.0f}/hr", f"{u:.0f}% (over)" if u > 100 else f"{u:.0f}%", delay])
+        for n in names:
+            add_row(f"{n} — {results[n].get('app_nodes',1)} node(s), {results[n].get('workers')} workers",
+                    results[n].get("workers") or 1)
+        for n in names:                                        # headroom row(s) for clusters
+            nodes = results[n].get("app_nodes", 1); wpn = results[n].get("workers_per_node")
+            if nodes > 1 and wpn:
+                hw = 6 if wpn < 6 else 10
+                if hw > wpn:
+                    add_row(f"{n} — {nodes} nodes, {nodes*hw} workers (headroom, {hw}/node)", nodes * hw)
+        mt = Table(mrows, colWidths=[6.6*cm, 3.0*cm, 2.8*cm, 4.4*cm])
+        mt.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor(INK)),("TEXTCOLOR",(0,0),(-1,0),colors.white),
+            ("FONTSIZE",(0,0),(-1,-1),8.6),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+            ("GRID",(0,0),(-1,-1),0.4,colors.HexColor(GRID)),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#F4F7F9")]),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
+        E.append(mt); E.append(Spacer(1, 6))
+        E.append(Image(f"{A}/model.png", width=15.5*cm, height=8.4*cm))
+        E.append(Paragraph("Modelled from the measured per-analysis CE time and your detected node/worker "
+            "configuration. Tune developers / analyses-per-day / peak-fraction in bench.yaml's 'model:' block.", SMALL))
+
     E.append(HRFlowable(width="100%", color=colors.HexColor(GRID), spaceBefore=6, spaceAfter=6))
     E.append(Paragraph("Non-production benchmark. Load generated by replaying SonarScanner's internal report format "
         "via api/ce/submit. Ensure both instances run the same version, comparable hardware/DB, and equal per-worker "
@@ -348,6 +423,8 @@ def run_target(t, cfg):
 
     m = collect(t, ns); m.update(queue_stats(csvp))
     m["workers"] = w_total; m["workers_detail"] = w_detail
+    m["workers_per_node"] = w["per_node"] if w else None
+    m["app_nodes"] = w["app_nodes"] if w else 1
     print(f"  → {m.get('ok',0)}/{m.get('n',0)} ok | drain {m.get('drain',0):.0f}s | "
           f"wait avg {m.get('wait_avg',0):.1f}s p95 {m.get('wait_p95',0):.0f}s | "
           f"queue avg {m.get('q_avg',0):.1f} peak {m.get('q_peak',0):.0f}")
