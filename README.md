@@ -79,7 +79,7 @@ seed_repo: /repos/acme-web          # a representative ~78K-ncloc service
 n: 40
 concurrency: 12
 scanner: sonar-scanner
-namespace: bench
+namespace: ee_vs_dce_benchmark_test
 report: ./acme-ee-vs-dce.pdf
 results_file: ./results.json
 targets:

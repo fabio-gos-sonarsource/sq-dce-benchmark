@@ -396,7 +396,7 @@ def run_target(t, cfg):
     print(f"  detected CE workers: {w_detail}")
 
     print("  validating one replay ...")
-    vkey = f"{ns}-000000"
+    vkey = f"{ns}-validate"
     post(t, "/api/projects/create", project=vkey, name=vkey)
     submit(t, vkey, stage_zip(rep, vkey, int(time.time() * 1000), profiles, stage))
     ok, info = validate_status(t, vkey)
@@ -406,7 +406,7 @@ def run_target(t, cfg):
     print(f"  ✓ replay valid ({info})")
 
     N = cfg["n"]
-    keys = [f"{ns}-{i:04d}" for i in range(1, N + 1)]
+    keys = [f"{ns}-{i:03d}" for i in range(1, N + 1)]
     print(f"  pre-creating {N} projects ...")
     precreate(t, keys)
     print(f"  staging {N} reports ...")

@@ -10,7 +10,7 @@ seed_repo: ./sample-project        # repo scanned ONCE per target. Use a REPRESE
 n: 40                              # burst size: analyses fired at once
 concurrency: 12                    # parallel submissions
 scanner: sonar-scanner             # path to the SonarScanner CLI (must be on PATH or absolute)
-namespace: bench                   # project-key prefix; every bench project uses it and is
+namespace: ee_vs_dce_benchmark_test   # project-key prefix -> ee_vs_dce_benchmark_test-001, -002, …; used
                                    # deleted afterwards (set keep_projects: true to keep them)
 report: ./sq-dce-benchmark-report.pdf
 results_file: ./results.json       # metrics are saved here; independent runs accumulate
