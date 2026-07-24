@@ -166,6 +166,27 @@ def produce_seed_report(t, cfg, workdir):
     post(t, "/api/projects/bulk_delete", q=key)          # keep only the report, not the project
     return rep
 
+def validate_token(t):
+    """Preflight (before the expensive scan): confirm the token authenticates AND has the
+    global 'Administer System' permission this benchmark requires. Fail fast and clearly."""
+    try:
+        v = _json(get(t, "/api/authentication/validate"), "authentication/validate")
+    except requests.exceptions.RequestException as e:
+        sys.exit(f"[{t['name']}] cannot reach {t['url']} ({type(e).__name__}). "
+                 "Check the URL is correct and the instance is up and reachable from here.")
+    if not v.get("valid", False):
+        sys.exit(f"[{t['name']}] token is INVALID for {t['url']} — check the target's `token:` in bench.yaml "
+                 "(is it the right instance? has it been revoked/expired?).")
+    perms = (_json(get(t, "/api/users/current"), "users/current").get("permissions") or {}).get("global") or []
+    if "admin" not in perms:
+        have = ", ".join(perms) if perms else "none"
+        sys.exit(
+            f"[{t['name']}] token lacks the required 'Administer System' permission.\n"
+            f"  This benchmark creates and deletes projects, and reads CE activity, worker count and\n"
+            f"  system health — all admin-only endpoints. Global permissions on this token: {have}.\n"
+            f"  → Generate the token as a user who has global 'Administer System'\n"
+            f"    (SonarQube: Administration > Security > Users > Tokens), then set it in bench.yaml.")
+
 def fetch_profiles(t):
     r = get(t, "/api/qualityprofiles/search", defaults="true")
     return {q["language"]: q["key"] for q in _json(r, "qualityprofiles/search").get("profiles", [])}
@@ -474,6 +495,7 @@ def generate_report(cfg, results):
 # ----------------------------- orchestration -----------------------------
 def run_target(t, cfg):
     print(f"\n=== {t['name']}  ({t['url']}) ===")
+    validate_token(t)                                                  # fail fast on bad token/perms
     work = tempfile.mkdtemp(prefix=f"sqbench_{t['name']}_")
     stage = tempfile.mkdtemp(prefix=f"sqstage_{t['name']}_")
     ns = cfg["namespace"]
