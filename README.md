@@ -1,4 +1,4 @@
-# sq-dce-benchmark
+# SonarQube EE vs DCE Analysis performance comparison
 
 A one-command benchmark that compares **Compute Engine (CE) throughput** between a
 SonarQube **Enterprise Edition** node and a **Data Center Edition** cluster, and
