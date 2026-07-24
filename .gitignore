@@ -3,6 +3,12 @@ bench.yaml
 
 # generated output
 *.pdf
+results*.json
+
+# build artifacts from seed/sample projects
+target/
+build/
+.gradle/
 
 # python
 __pycache__/

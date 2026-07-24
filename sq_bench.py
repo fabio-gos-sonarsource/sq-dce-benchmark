@@ -63,20 +63,69 @@ def post(t, path, **params):
 # ----------------------------- scanning / reports -----------------------------
 DEFAULT_EXCL = "**/node_modules/**,**/dist/**,**/*.min.js,**/*.pyc,**/__pycache__/**"
 
-def scan_seed(t, cfg, workdir):
-    key = cfg["namespace"] + "-seed"
-    cmd = [cfg.get("scanner", "sonar-scanner"),
-           f'-Dsonar.host.url={t["url"]}', f'-Dsonar.token={t["token"]}',
-           f'-Dsonar.projectKey={key}', f'-Dsonar.projectName={key}',
-           f'-Dsonar.projectBaseDir={cfg["seed_repo"]}', '-Dsonar.sources=.',
-           f'-Dsonar.working.directory={workdir}',
-           '-Dsonar.scm.disabled=true', '-Dsonar.scanner.keepReport=true',
-           f'-Dsonar.exclusions={cfg.get("exclusions", DEFAULT_EXCL)}']
-    r = subprocess.run(cmd, capture_output=True, text=True)
-    rep = os.path.join(workdir, "scanner-report")
-    if not os.path.exists(os.path.join(rep, "metadata.pb")):
-        sys.stderr.write((r.stdout or "")[-1500:] + (r.stderr or "")[-1500:] + "\n")
-        raise RuntimeError(f"[{t['name']}] seed scan produced no report — check scanner + host/token")
+def detect_scan_mode(seed_repo):
+    """auto-detect the right scanner from the project's build files."""
+    j = lambda p: os.path.join(seed_repo, p)
+    if os.path.exists(j("pom.xml")):
+        return "maven"
+    if os.path.exists(j("build.gradle")) or os.path.exists(j("build.gradle.kts")) \
+       or glob.glob(j("settings.gradle*")):
+        return "gradle"
+    if glob.glob(j("*.sln")) or glob.glob(j("*.csproj")) \
+       or glob.glob(j("**/*.csproj"), recursive=True):
+        return "dotnet"
+    return "cli"
+
+def _find_report(*roots):
+    """locate scanner-report/metadata.pb (scanners write it to different working dirs)."""
+    for d in roots:
+        if not d or not os.path.isdir(d):
+            continue
+        hits = glob.glob(os.path.join(d, "scanner-report", "metadata.pb")) \
+            + glob.glob(os.path.join(d, "**", "scanner-report", "metadata.pb"), recursive=True)
+        hits = [h for h in hits if os.path.exists(h)]
+        if hits:
+            hits.sort(key=os.path.getmtime, reverse=True)
+            return os.path.dirname(hits[0])
+    return None
+
+def _props(cfg):
+    return [f"-D{k}={v}" for k, v in (cfg.get("scanner_props") or {}).items()]
+
+def produce_seed_report(t, cfg, workdir):
+    """Scan the seed project ONCE with the appropriate scanner; return its scanner-report dir."""
+    seed = cfg["seed_repo"]; key = cfg["namespace"] + "-seed"
+    mode = cfg.get("scan_mode", "auto")
+    if mode == "auto":
+        mode = detect_scan_mode(seed)
+    if mode == "dotnet":
+        sys.exit(f"[{t['name']}] .NET (C#/VB.NET) is NOT supported by this tool. Point seed_repo at a "
+                 "Java / JS / TS / Python / Go / … project (see README > Compatible languages).")
+    print(f"  scan mode: {mode}")
+    common = [f"-Dsonar.host.url={t['url']}", f"-Dsonar.token={t['token']}",
+              f"-Dsonar.projectKey={key}", f"-Dsonar.projectName={key}",
+              "-Dsonar.scanner.keepReport=true", "-Dsonar.scm.disabled=true"] + _props(cfg)
+    if mode == "maven":
+        # fully-qualified goal so it works without the sonar pluginGroup in settings.xml
+        cmd = [cfg.get("maven", "mvn"), "-B", "-DskipTests", "verify",
+               "org.sonarsource.scanner.maven:sonar-maven-plugin:sonar"] + common
+        cwd, roots = seed, [os.path.join(seed, "target"), seed, workdir]
+    elif mode == "gradle":
+        gw = cfg.get("gradle") or ("./gradlew" if os.path.exists(os.path.join(seed, "gradlew")) else "gradle")
+        cmd = [gw, "build", "sonar", "-x", "test"] + common
+        cwd, roots = seed, [os.path.join(seed, "build"), seed, workdir]
+    else:  # cli — source-analysed languages (JS/TS/Python/Go/PHP/HTML/…)
+        cmd = [cfg.get("scanner_cli") or cfg.get("scanner", "sonar-scanner"),
+               f"-Dsonar.projectBaseDir={seed}", "-Dsonar.sources=.",
+               f"-Dsonar.working.directory={workdir}", "-Dsonar.scanner.skipJreProvisioning=true",
+               f"-Dsonar.exclusions={cfg.get('exclusions', DEFAULT_EXCL)}"] + common
+        cwd, roots = None, [workdir]
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    rep = _find_report(*roots)
+    if not rep:
+        sys.stderr.write((r.stdout or "")[-2500:] + (r.stderr or "")[-1500:] + "\n")
+        raise RuntimeError(f"[{t['name']}] {mode} scan produced no report — see build output above "
+                           "(the project must build in this environment: JDK + Maven/Gradle + resolvable deps)")
     post(t, "/api/projects/bulk_delete", q=key)          # keep only the report, not the project
     return rep
 
@@ -119,8 +168,12 @@ def patch_report(report_dir, new_key, date_ms, profiles):
     open(md_path, "wb").write(md.SerializeToString())
     for cpb in glob.glob(os.path.join(report_dir, "component-*.pb")):
         c = PB.Component(); c.ParseFromString(open(cpb, "rb").read()); changed = False
-        if c.key == old_key:  c.key = new_key;  changed = True
-        if c.name == old_key: c.name = new_key; changed = True
+        if c.key == old_key:                               # root component
+            c.key = new_key; changed = True
+        elif c.key.startswith(old_key + ":"):              # module/file keys (multi-module Maven/Gradle)
+            c.key = new_key + c.key[len(old_key):]; changed = True
+        if c.name == old_key:                              # root name = project name
+            c.name = new_key; changed = True
         if changed:
             open(cpb, "wb").write(c.SerializeToString())
 
@@ -388,7 +441,7 @@ def run_target(t, cfg):
     ns = cfg["namespace"]
     post(t, "/api/projects/bulk_delete", q=ns)                         # clean slate
     print("  scanning seed once ...")
-    rep = scan_seed(t, cfg, work)
+    rep = produce_seed_report(t, cfg, work)
     profiles = fetch_profiles(t)
     w = detect_workers(t)
     w_total = w["total"] if w else t.get("workers", "?")

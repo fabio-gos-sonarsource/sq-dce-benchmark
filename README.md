@@ -25,10 +25,34 @@ real tasks almost instantly and you measure how fast it clears the queue. Each
 replayed task is processed as a **full, real CE task** (same rules, issues, measures);
 only the redundant client-side scan is skipped.
 
+## Compatible languages
+
+Java, JavaScript/TypeScript, Python, Go, PHP, Kotlin, Ruby, Scala, HTML/CSS, XML, YAML,
+IaC, and other source-analysed languages.
+
+> **Not supported: .NET (C#/VB.NET)** — it requires the SonarScanner for .NET
+> (`begin` → build → `end`), which this tool does not drive. Point `seed_repo` at a
+> supported project instead.
+
+The seed is scanned with the right scanner automatically (`scan_mode: auto`):
+
+| Project contains | Scanner used | You need |
+|---|---|---|
+| `pom.xml` | Maven — `mvn -DskipTests verify sonar:sonar` | **Maven + a JDK**, dependencies resolvable |
+| `build.gradle(.kts)` | Gradle — `gradlew build sonar` | **Gradle + a JDK**, and the **SonarQube Gradle plugin** applied in the build |
+| neither | CLI — `sonar-scanner` | the **SonarScanner CLI** |
+
+**Java note:** Java analysis needs compiled bytecode, so Maven/Gradle **build then scan** in
+one step — you don't set `sonar.java.binaries` manually. The project must **build on the
+machine running the tool** (JDK + Maven/Gradle + resolvable dependencies/credentials).
+Rule of thumb: *if it builds in your CI, it builds here.* Force a mode with
+`scan_mode: maven | gradle | cli` if auto-detection guesses wrong.
+
 ## What you need (one machine)
 
 - **Python 3.9+** and the deps in `requirements.txt`
-- The **SonarScanner CLI** on `PATH` (or set `scanner:` to its path)
+- A scanner for your project's language (see the table above): **SonarScanner CLI** for
+  source-analysed languages, or **Maven/Gradle + a JDK** for Java
 - Network access to both instances
 - An **admin token** for each instance (create-project + execute-analysis + admin)
 
@@ -41,6 +65,8 @@ cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, seed_repo, N
 
 Point `seed_repo` at a **representative repository** (the bundled `sample-project`
 is tiny — good only for a smoke test; a bigger repo gives realistic CE task sizes).
+For a quick Java check, point `seed_repo` at `sample-java` (a self-contained Maven
+project that builds offline) — it exercises the full `scan_mode: maven` path.
 
 ## Run
 
@@ -186,7 +212,8 @@ DCE cluster stays near zero. Change `devs` and re-run `report` to re-model insta
 | `sq_bench.py` | the CLI (`run`, `cleanup`) |
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
 | `proto/` | SonarScanner report schema (compiled at runtime, protobuf-version-safe) |
-| `sample-project/` | tiny sample for a smoke test |
+| `sample-project/` | tiny sample for a **cli** smoke test |
+| `sample-java/` | tiny self-contained Maven project for a **Java (maven)** smoke test (builds offline) |
 
 ## Notes / attribution
 
