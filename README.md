@@ -48,6 +48,10 @@ machine running the tool** (JDK + Maven/Gradle + resolvable dependencies/credent
 Rule of thumb: *if it builds in your CI, it builds here.* Force a mode with
 `scan_mode: maven | gradle | cli` if auto-detection guesses wrong.
 
+If your project targets a specific JDK (common with Lombok or older codebases), set
+`java_home:` in `bench.yaml` — the tool builds/scans the seed with that JDK
+(`JAVA_HOME` + its `bin` on `PATH`) instead of the default `java` on `PATH`.
+
 ## What you need (one machine)
 
 - **Python 3.9+** and the deps in `requirements.txt`

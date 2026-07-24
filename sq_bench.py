@@ -120,7 +120,13 @@ def produce_seed_report(t, cfg, workdir):
                f"-Dsonar.working.directory={workdir}", "-Dsonar.scanner.skipJreProvisioning=true",
                f"-Dsonar.exclusions={cfg.get('exclusions', DEFAULT_EXCL)}"] + common
         cwd, roots = None, [workdir]
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+    env = os.environ.copy()
+    jh = cfg.get("java_home")
+    if jh:                                                  # build/scan with a specific JDK
+        env["JAVA_HOME"] = jh
+        env["PATH"] = os.path.join(jh, "bin") + os.pathsep + env.get("PATH", "")
+        print(f"  JAVA_HOME: {jh}")
+    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
     rep = _find_report(*roots)
     if not rep:
         sys.stderr.write((r.stdout or "")[-2500:] + (r.stderr or "")[-1500:] + "\n")

@@ -19,6 +19,9 @@ scan_mode: auto                    # auto | maven | gradle | cli
 scanner_cli: sonar-scanner         # generic CLI (used for cli mode; on PATH or absolute)
 # maven: mvn                       # only if not on PATH
 # gradle: ./gradlew                # only if not on PATH
+# java_home: /path/to/jdk17        # JDK used to BUILD the seed (maven/gradle). Set this
+#                                  # when your project targets a JDK other than the default
+#                                  # `java` on PATH (e.g. Lombok/older projects need JDK 17/21).
 # scanner_props:                   # optional extra -D properties for the scan
 #   sonar.java.version: "17"
 namespace: ee_vs_dce_benchmark_test   # project-key prefix -> ee_vs_dce_benchmark_test-001, -002, …; used
