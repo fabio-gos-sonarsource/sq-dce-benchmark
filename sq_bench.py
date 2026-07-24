@@ -351,8 +351,9 @@ def generate_report(cfg, results):
             row("Throughput (tasks/hr)", "thr", f0),
             row("Avg queue wait (s)", "wait_avg", f1),
             row("p95 queue wait (s)", "wait_p95", f0),
-            row("Avg queue size", "q_avg", f1),
-            row("Peak queue size", "q_peak", f0),
+            # queue size (pending) intentionally omitted from the table: by Little's Law it
+            # scales with throughput, so a faster system shows a *larger* pending queue while
+            # each task waits *less* — misleading in a table. It's kept in the over-time chart.
             row("CE time / task (s)", "proc_avg", f1)]
     tbl = Table(data, colWidths=[6.2*cm] + [ (10.2/len(names))*cm ]*len(names))
     tbl.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor(INK)),("TEXTCOLOR",(0,0),(-1,0),colors.white),
