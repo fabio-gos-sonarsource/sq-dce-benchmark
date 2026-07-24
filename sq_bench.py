@@ -53,11 +53,37 @@ def load_proto():
 
 
 # ----------------------------- http helpers -----------------------------
+SESSION = requests.Session()
+# ngrok-skip-browser-warning bypasses ngrok's HTML interstitial on *.ngrok.io tunnels
+# (otherwise API calls get an HTML page and JSON parsing fails); a non-browser UA
+# likewise avoids challenge pages from other proxies.
+SESSION.headers.update({"ngrok-skip-browser-warning": "true", "User-Agent": "sq-dce-benchmark/1.0"})
+
 def _auth(t): return (t["token"], "")
 def get(t, path, **params):
-    return requests.get(t["url"].rstrip("/") + path, params=params, auth=_auth(t), timeout=30)
+    return SESSION.get(t["url"].rstrip("/") + path, params=params, auth=_auth(t), timeout=30)
 def post(t, path, **params):
-    return requests.post(t["url"].rstrip("/") + path, params=params, auth=_auth(t), timeout=60)
+    return SESSION.post(t["url"].rstrip("/") + path, params=params, auth=_auth(t), timeout=60)
+
+def _json(r, what="request"):
+    """Parse a JSON API response, or exit with an actionable message (not a raw traceback)."""
+    ctype = r.headers.get("content-type", "")
+    if r.status_code >= 400 or "json" not in ctype.lower():
+        body = " ".join((r.text or "").split())[:300]
+        if ".ngrok" in (r.url or ""):
+            hint = ("\n  → This is an ngrok tunnel; an HTML body is usually ngrok's browser-warning/"
+                    "error page. Confirm the tunnel is up and the token is valid.")
+        elif r.status_code in (401, 403):
+            hint = f"\n  → HTTP {r.status_code}: the token needs admin (create-project + execute-analysis)."
+        else:
+            hint = "\n  → Check the instance URL is reachable and returns the SonarQube API (not a proxy page)."
+        sys.exit(f"[{what}] expected JSON from {r.url} but got HTTP {r.status_code} "
+                 f"({ctype or 'no content-type'}). First bytes: {body!r}{hint}")
+    try:
+        return r.json()
+    except Exception:
+        body = " ".join((r.text or "").split())[:300]
+        sys.exit(f"[{what}] invalid JSON from {r.url}: {body!r}")
 
 
 # ----------------------------- scanning / reports -----------------------------
@@ -141,8 +167,8 @@ def produce_seed_report(t, cfg, workdir):
     return rep
 
 def fetch_profiles(t):
-    return {q["language"]: q["key"] for q in get(t, "/api/qualityprofiles/search",
-                                                 defaults="true").json().get("profiles", [])}
+    r = get(t, "/api/qualityprofiles/search", defaults="true")
+    return {q["language"]: q["key"] for q in _json(r, "qualityprofiles/search").get("profiles", [])}
 
 def detect_workers(t):
     """Read the REAL CE worker count from the instance: per-node × application nodes."""
@@ -199,10 +225,10 @@ def stage_zip(report_dir, key, date_ms, profiles, stage_root):
 
 def submit(t, key, zip_path):
     with open(zip_path, "rb") as f:
-        return requests.post(t["url"].rstrip("/") + "/api/ce/submit",
-                             params={"projectKey": key, "projectName": key},
-                             files={"report": ("scanner-report.zip", f, "application/zip")},
-                             auth=_auth(t), timeout=180)
+        return SESSION.post(t["url"].rstrip("/") + "/api/ce/submit",
+                            params={"projectKey": key, "projectName": key},
+                            files={"report": ("scanner-report.zip", f, "application/zip")},
+                            auth=_auth(t), timeout=180)
 
 def precreate(t, keys):
     for k in keys:
