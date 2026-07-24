@@ -9,22 +9,6 @@ produces a PDF report — designed to show the impact of DCE on analysis feedbac
 > internal report format via `api/ce/submit` (unsupported internals). Run it only
 > against **non-production** instances.
 
-## Why "replay"?
-
-A normal analysis has two parts: the **scan** (CPU-heavy: `sonar-scanner` runs the
-analyzers and produces a *report*), and the **process** step (the server's Compute
-Engine ingests that report).
-
-To load-test throughput you need many analyses at once. Running the scanner N times
-is heavy and, on one machine, makes the **scanner** the bottleneck — you'd measure
-scan time, not the server.
-
-So this tool **scans once**, then **replays that one report N times** (each tagged as
-a distinct project). Re-sending a saved report is cheap, so the server's CE gets N
-real tasks almost instantly and you measure how fast it clears the queue. Each
-replayed task is processed as a **full, real CE task** (same rules, issues, measures);
-only the redundant client-side scan is skipped.
-
 ## Compatible languages
 
 Java, JavaScript/TypeScript, Python, Go, PHP, Kotlin, Ruby, Scala, HTML/CSS, XML, YAML,
@@ -164,7 +148,6 @@ The report contains this table plus a queue-size-over-time chart:
 | Throughput (tasks/hr) | 3,692 | **9,600** |
 | Avg queue wait (s) | 16.8 | **5.6** |
 | p95 queue wait (s) | 31 | **11** |
-| Avg queue size | 17.7 | 14.8 |
 | Peak queue size | 37 | 35 |
 | CE time / task (s) | 5.0 | 3.4 |
 
