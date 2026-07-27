@@ -348,7 +348,7 @@ def generate_report(cfg, results):
     from reportlab.lib import colors
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-                                    Image, HRFlowable)
+                                    Image, HRFlowable, KeepTogether)
     INK="#22303C"; MUT="#7A8A99"; GRID="#DDE4EA"; PAL=["#E8833A","#1F8FD6","#2F9E6E","#9B59B6"]
     A = tempfile.mkdtemp(prefix="sqbench_rep_")
     names = list(results.keys())
@@ -452,7 +452,7 @@ def generate_report(cfg, results):
                     by_total.setdefault(tot, []).append((nodes, wpn))
         rec_is_measured = bool(dce_w and util(dce_w) <= 70.0)   # measured DCE already adequate?
         floor = dce_w if rec_is_measured else 0                 # only show growth beyond an adequate measured DCE
-        est_totals = [t for t in sorted(by_total) if t > floor and t != (dce_w or -1)][:5]
+        est_totals = [t for t in sorted(by_total) if t > floor and t != (dce_w or -1)][:4]
         rec_total = dce_w if rec_is_measured else next((t for t in est_totals if util(t) <= 70.0),
                                                        (est_totals[-1] if est_totals else None))
 
@@ -485,7 +485,7 @@ def generate_report(cfg, results):
                 n2, w2 = by_total[tot][1]
                 add(topo("DCE", n2, w2, tot), tot, "alt topology"); alt_done = True
 
-        mt = Table(mrows, colWidths=[6.2*cm, 2.6*cm, 2.0*cm, 3.3*cm, 2.3*cm])
+        mt = Table(mrows, colWidths=[6.2*cm, 2.6*cm, 2.0*cm, 3.3*cm, 2.3*cm], repeatRows=1)
         style = [("BACKGROUND",(0,0),(-1,0),colors.HexColor(INK)),("TEXTCOLOR",(0,0),(-1,0),colors.white),
             ("FONTSIZE",(0,0),(-1,-1),8),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
             ("GRID",(0,0),(-1,-1),0.4,colors.HexColor(GRID)),
@@ -497,10 +497,10 @@ def generate_report(cfg, results):
         mt.setStyle(TableStyle(style))
 
         # -------------------------------- chart --------------------------------
+        # only the measured EE vs DCE lines here (the recommended sizing is the green
+        # row in the table above) — keeps the chart to the actual head-to-head comparison
         lam = np.linspace(0, peak * 2, 400)
         series = [(n, results[n].get("workers") or 1, cols[n], "-") for n in names]
-        if rec_total and not rec_is_measured:
-            series.append(("DCE recommended", rec_total, "#2E7D32", "--"))
         top = max(30.0, max(dmin(peak * 2, w) for _, w, _, _ in series) * 1.1)
         fm, ax2 = plt.subplots(figsize=(6.6, 3.6))
         for short, w, col, ls in series:
@@ -523,20 +523,25 @@ def generate_report(cfg, results):
         fm.tight_layout(); fm.savefig(f"{A}/model.png", bbox_inches="tight"); plt.close(fm)
 
         E.append(HRFlowable(width="100%", color=colors.HexColor(GRID), spaceBefore=6, spaceAfter=6))
-        E.append(Paragraph(f"Production model — {devs:,} developers", H2))
-        E.append(Paragraph(
-            f"Assumptions: {devs:,} developers × {apd} analyses/day = {daily:,}/day; ~{int(pf*100)}% land in the peak "
-            f"hour ≈ <b>{peak:,.0f} analyses/hr</b>; measured <b>{T:.1f}s</b>/analysis (from this run). "
-            "Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
-            BODY))
-        E.append(mt); E.append(Spacer(1, 4))
-        E.append(Paragraph(
-            "<b>Measured</b> rows are this run's actual configuration; <b>estimates</b> project the same measured "
-            "per-analysis CE time onto other worker counts. <b>Green = recommended</b> sizing (keeps peak utilisation "
-            "≤ 70%). EE is a single node — bounded by one host, no HA — while DCE scales by adding nodes; the "
-            "estimates show several node × workers/node combinations that reach the needed capacity. Estimates are "
-            "linear (capacity = workers × 3600 / CE-time); near or above 100% utilisation real queueing grows faster "
-            "than shown.", SMALL))
+        # keep heading + assumptions + table + note together so the table never splits a row
+        # across a page break (it moves to a fresh page as a unit if it doesn't fit)
+        E.append(KeepTogether([
+            Paragraph(f"Production model — {devs:,} developers", H2),
+            Paragraph(
+                f"Assumptions: {devs:,} developers × {apd} analyses/day = {daily:,}/day; ~{int(pf*100)}% land in the "
+                f"peak hour ≈ <b>{peak:,.0f} analyses/hr</b>; measured <b>{T:.1f}s</b>/analysis (from this run). "
+                "Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
+                BODY),
+            mt,
+            Spacer(1, 4),
+            Paragraph(
+                "<b>Measured</b> rows are this run's actual configuration; <b>estimates</b> project the same measured "
+                "per-analysis CE time onto other worker counts. <b>Green = recommended</b> sizing (keeps peak utilisation "
+                "≤ 70%). EE is a single node — bounded by one host, no HA — while DCE scales by adding nodes; the "
+                "estimates show several node × workers/node combinations that reach the needed capacity. Estimates are "
+                "linear (capacity = workers × 3600 / CE-time); near or above 100% utilisation real queueing grows faster "
+                "than shown.", SMALL),
+        ]))
         E.append(Spacer(1, 6))
         E.append(Image(f"{A}/model.png", width=15.5*cm, height=8.4*cm))
 
