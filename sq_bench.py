@@ -424,26 +424,96 @@ def generate_report(cfg, results):
         else:                                                  # else: measured, least-contended target
             base = min(results.values(), key=lambda v: (v.get("workers") or 1))
             T = base.get("proc_avg") or 5.0
-        def cap(w): return w * 3600.0 / T
+        import math
+        c1 = 3600.0 / T                                        # capacity per worker (analyses/hr)
+        def cap(w): return w * c1
         def dmin(lam, w):
             c = cap(w); return 0.0 if lam <= c else (lam - c) / (2 * c) * 60.0
+        def util(w): return peak / cap(w) * 100.0
+        def util_cell(w):
+            u = util(w); return f"{u:.0f}% (over)" if u > 100 else f"{u:.0f}%"
+        def delay_cell(w):
+            c = cap(w); d = dmin(peak, w); mx = (peak - c) / c * 60 if peak > c else 0
+            return f"~{d:.0f} min (max ~{mx:.0f} min)" if d >= 1 else "< 1 s"
 
-        lam = np.linspace(0, peak * 2, 400)
-        top = max(30.0, max(dmin(peak * 2, results[n].get("workers") or 1) for n in names) * 1.1)
-        fm, ax2 = plt.subplots(figsize=(6.6, 3.6))
+        Wp = max(1, math.ceil(peak / c1))                      # workers to meet the peak (~100%)
+        # classify the measured targets by architecture: 1 node = EE-like, >1 = DCE-like
+        ee = next((n for n in names if (results[n].get("app_nodes", 1) or 1) == 1), None)
+        dce = next((n for n in names if (results[n].get("app_nodes", 1) or 1) > 1), None)
+        dce_w = (results[dce].get("workers") or 1) if dce else None
+        ee_w = (results[ee].get("workers") or 1) if ee else None
+
+        # DCE sizing sweep: realistic node × workers/node combos bracketing the peak
+        by_total = {}
+        for nodes in (3, 4, 5, 6):
+            for wpn in (3, 4, 5, 6):
+                tot = nodes * wpn
+                if 30.0 <= util(tot) <= 100.0:
+                    by_total.setdefault(tot, []).append((nodes, wpn))
+        rec_is_measured = bool(dce_w and util(dce_w) <= 70.0)   # measured DCE already adequate?
+        floor = dce_w if rec_is_measured else 0                 # only show growth beyond an adequate measured DCE
+        est_totals = [t for t in sorted(by_total) if t > floor and t != (dce_w or -1)][:5]
+        rec_total = dce_w if rec_is_measured else next((t for t in est_totals if util(t) <= 70.0),
+                                                       (est_totals[-1] if est_totals else None))
+
+        # -------------------------------- table --------------------------------
+        mrows = [["Configuration", "Peak capacity", "Utilisation", "Avg feedback delay", "Type"]]
+        hi = []                                                 # row indices to highlight (recommended)
+        def add(label, w, typ):
+            mrows.append([label, f"{cap(w):,.0f}/hr", util_cell(w), delay_cell(w), typ]); return len(mrows) - 1
+        def topo(name, nodes, wpn, w):
+            return f"{name} — 1 node, {w} workers" if nodes <= 1 else f"{name} — {nodes} nodes × {wpn} ({w} workers)"
+        # 1) measured rows (grounded in this run)
         for n in names:
             w = results[n].get("workers") or 1
-            ax2.plot(lam, [dmin(x, w) for x in lam], color=cols[n], lw=2.4,
-                     label=f"{n} — {results[n].get('workers','?')} workers")
+            nodes = results[n].get("app_nodes", 1) or 1
+            wpn = results[n].get("workers_per_node") or w
+            i = add(topo(n, nodes, wpn, w), w, "measured")
+            if n == dce and rec_is_measured:
+                hi.append(i)
+        # 2) EE estimate to meet the peak — only if the measured single node can't
+        if ee and ee_w and ee_w < Wp:
+            add(f"EE — 1 node, {Wp} workers (single node · no HA)", Wp, "estimate")
+        # 3) DCE sizing estimates (several node × workers/node combinations)
+        alt_done = False
+        for tot in est_totals:
+            nodes, wpn = by_total[tot][0]
+            i = add(topo("DCE", nodes, wpn, tot), tot, "estimate")
+            if tot == rec_total:
+                hi.append(i)
+            if not alt_done and len(by_total[tot]) > 1:         # show one same-capacity alternative topology
+                n2, w2 = by_total[tot][1]
+                add(topo("DCE", n2, w2, tot), tot, "alt topology"); alt_done = True
+
+        mt = Table(mrows, colWidths=[6.2*cm, 2.6*cm, 2.0*cm, 3.3*cm, 2.3*cm])
+        style = [("BACKGROUND",(0,0),(-1,0),colors.HexColor(INK)),("TEXTCOLOR",(0,0),(-1,0),colors.white),
+            ("FONTSIZE",(0,0),(-1,-1),8),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
+            ("GRID",(0,0),(-1,-1),0.4,colors.HexColor(GRID)),
+            ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#F4F7F9")]),
+            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]
+        for i in hi:                                            # highlight recommended row(s) in green
+            style.append(("BACKGROUND",(0,i),(-1,i),colors.HexColor("#E6F4EA")))
+            style.append(("FONTNAME",(0,i),(-1,i),"Helvetica-Bold"))
+        mt.setStyle(TableStyle(style))
+
+        # -------------------------------- chart --------------------------------
+        lam = np.linspace(0, peak * 2, 400)
+        series = [(n, results[n].get("workers") or 1, cols[n], "-") for n in names]
+        if rec_total and not rec_is_measured:
+            series.append(("DCE recommended", rec_total, "#2E7D32", "--"))
+        top = max(30.0, max(dmin(peak * 2, w) for _, w, _, _ in series) * 1.1)
+        fm, ax2 = plt.subplots(figsize=(6.6, 3.6))
+        for short, w, col, ls in series:
+            ax2.plot(lam, [dmin(x, w) for x in lam], color=col, lw=2.4, ls=ls, label=f"{short} — {w} workers")
         ax2.axvline(peak, color=INK, ls="--", lw=1.1)
         ax2.annotate(f"{devs:,}-dev peak\n≈{peak:,.0f}/hr", xy=(peak, top * 0.22),
                      xytext=(peak * 0.42, top * 0.62), fontsize=8.5, color=INK,
                      arrowprops=dict(arrowstyle="->", color=INK, lw=1))
-        for n in names:
-            w = results[n].get("workers") or 1; d = dmin(peak, w); short = n.split("-")[0]
+        for short, w, col, ls in series:
+            d = dmin(peak, w)
             lbl = f"{short} ≈ {d:.0f} min" if d >= 1 else f"{short} ≈ 0 s"
             ax2.annotate(lbl, xy=(peak, d), xytext=(peak * 1.04, max(top * 0.05, min(d + top * 0.06, top * 0.9))),
-                         fontsize=9, color=cols[n], weight="bold")
+                         fontsize=9, color=col, weight="bold")
         ax2.set_xlabel("peak analysis submission rate (analyses/hour)"); ax2.set_ylabel("avg feedback delay (min)")
         ax2.set_ylim(0, top); ax2.set_xlim(0, peak * 2)
         ax2.xaxis.set_major_formatter(FuncFormatter(lambda v, _: f"{v/1000:.0f}k"))
@@ -459,30 +529,16 @@ def generate_report(cfg, results):
             f"hour ≈ <b>{peak:,.0f} analyses/hr</b>; measured <b>{T:.1f}s</b>/analysis (from this run). "
             "Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
             BODY))
-        mrows = [["Configuration", "Peak capacity", "Utilisation", "Avg feedback delay"]]
-        def add_row(label, w):
-            c = cap(w); u = peak / c * 100; d = dmin(peak, w); mx = (peak - c) / c * 60 if peak > c else 0
-            delay = f"~{d:.0f} min (max ~{mx:.0f} min)" if d >= 1 else "< 1 s"
-            mrows.append([label, f"{c:,.0f}/hr", f"{u:.0f}% (over)" if u > 100 else f"{u:.0f}%", delay])
-        for n in names:
-            add_row(f"{n} — {results[n].get('app_nodes',1)} node(s), {results[n].get('workers')} workers",
-                    results[n].get("workers") or 1)
-        for n in names:                                        # headroom row(s) for clusters
-            nodes = results[n].get("app_nodes", 1); wpn = results[n].get("workers_per_node")
-            if nodes > 1 and wpn:
-                hw = 6 if wpn < 6 else 10
-                if hw > wpn:
-                    add_row(f"{n} — {nodes} nodes, {nodes*hw} workers (headroom, {hw}/node)", nodes * hw)
-        mt = Table(mrows, colWidths=[6.6*cm, 3.0*cm, 2.8*cm, 4.4*cm])
-        mt.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor(INK)),("TEXTCOLOR",(0,0),(-1,0),colors.white),
-            ("FONTSIZE",(0,0),(-1,-1),8.6),("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
-            ("GRID",(0,0),(-1,-1),0.4,colors.HexColor(GRID)),
-            ("ROWBACKGROUNDS",(0,1),(-1,-1),[colors.white,colors.HexColor("#F4F7F9")]),
-            ("VALIGN",(0,0),(-1,-1),"MIDDLE"),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
-        E.append(mt); E.append(Spacer(1, 6))
+        E.append(mt); E.append(Spacer(1, 4))
+        E.append(Paragraph(
+            "<b>Measured</b> rows are this run's actual configuration; <b>estimates</b> project the same measured "
+            "per-analysis CE time onto other worker counts. <b>Green = recommended</b> sizing (keeps peak utilisation "
+            "≤ 70%). EE is a single node — bounded by one host, no HA — while DCE scales by adding nodes; the "
+            "estimates show several node × workers/node combinations that reach the needed capacity. Estimates are "
+            "linear (capacity = workers × 3600 / CE-time); near or above 100% utilisation real queueing grows faster "
+            "than shown.", SMALL))
+        E.append(Spacer(1, 6))
         E.append(Image(f"{A}/model.png", width=15.5*cm, height=8.4*cm))
-        E.append(Paragraph("Modelled from the measured per-analysis CE time and your detected node/worker "
-            "configuration. Tune developers / analyses-per-day / peak-fraction in bench.yaml's 'model:' block.", SMALL))
 
     E.append(HRFlowable(width="100%", color=colors.HexColor(GRID), spaceBefore=6, spaceAfter=6))
     E.append(Paragraph("Non-production benchmark. Load generated by replaying SonarScanner's internal report format "
