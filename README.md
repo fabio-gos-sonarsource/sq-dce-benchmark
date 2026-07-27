@@ -29,8 +29,8 @@ The seed is scanned with the right scanner automatically (`scan_mode: auto`):
 **Java note:** Java analysis needs compiled bytecode, so Maven/Gradle **build then scan** in
 one step — you don't set `sonar.java.binaries` manually. The project must **build on the
 machine running the tool** (JDK + Maven/Gradle + resolvable dependencies/credentials).
-Rule of thumb: *if it builds in your CI, it builds here.* Force a mode with
-`scan_mode: maven | gradle | cli` if auto-detection guesses wrong.
+It's possible to force a mode with
+`scan_mode: maven | gradle | cli` if you do not want to use auto-detection.
 
 If your project targets a specific JDK (common with Lombok or older codebases), set
 `java_home:` in `bench.yaml` — the tool builds/scans the seed with that JDK
@@ -47,6 +47,8 @@ corporate Artifactory mirror profile, or building only some modules), pass it vi
 - A scanner for your project's language (see the table above): **SonarScanner CLI** for
   source-analysed languages, or **Maven/Gradle + a JDK** for Java
 - Network access to both instances
+- A SonarQube Server Enterprise Edition (2026.1+)
+- A SonarQube Server Data Center Edition (2026.1+)
 - An **admin token** for each instance (create-project + execute-analysis + admin)
 
 ## Setup
