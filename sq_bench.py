@@ -157,10 +157,36 @@ def produce_seed_report(t, cfg, workdir):
         env["JAVA_HOME"] = jh
         env["PATH"] = os.path.join(jh, "bin") + os.pathsep + env.get("PATH", "")
         print(f"  JAVA_HOME: {jh}")
-    r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, env=env)
+    # Stream the build/scan output live so a long (minutes-long) seed scan never LOOKS hung,
+    # and enforce a hard timeout so a genuinely stuck build (e.g. a stalled download) aborts
+    # with a clear message instead of hanging forever. Tune with `scan_timeout` in bench.yaml.
+    import signal
+    scan_timeout = int(cfg.get("scan_timeout", 1800))
+    print(f"  building & scanning the seed (mode={mode}) — this runs your project's build and can take "
+          f"several minutes; live output follows (aborts after {scan_timeout}s if it stalls):", flush=True)
+    try:                                                 # own process group so we can kill the whole build tree
+        p = subprocess.Popen(cmd, cwd=cwd, env=env, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, bufsize=1, start_new_session=True)
+    except FileNotFoundError:
+        sys.exit(f"[{t['name']}] cannot run {cmd[0]!r} — not found on PATH. Install it, or set its path in "
+                 "bench.yaml (maven / gradle / scanner_cli), then retry.")
+    out = []; timed_out = {"v": False}
+    done = threading.Event()
+    def _watchdog():
+        if not done.wait(scan_timeout):                  # timeout elapsed before the build finished
+            timed_out["v"] = True
+            try: os.killpg(os.getpgid(p.pid), signal.SIGKILL)   # kill mvn/gradle AND its child JVMs/npm
+            except Exception: p.kill()
+    threading.Thread(target=_watchdog, daemon=True).start()
+    for line in p.stdout:                                # stream live; killpg closes the pipe -> loop ends
+        out.append(line); print("    " + line.rstrip()[:200], flush=True)
+    p.wait(); done.set()
+    if timed_out["v"]:
+        sys.exit(f"[{t['name']}] seed scan exceeded {scan_timeout}s and was aborted — it looked stuck. "
+                 "Check the build and network; raise 'scan_timeout' in bench.yaml if the build is legitimately long.")
     rep = _find_report(*roots)
     if not rep:
-        sys.stderr.write((r.stdout or "")[-2500:] + (r.stderr or "")[-1500:] + "\n")
+        sys.stderr.write("".join(out)[-3500:] + "\n")
         raise RuntimeError(f"[{t['name']}] {mode} scan produced no report — see build output above "
                            "(the project must build in this environment: JDK + Maven/Gradle + resolvable deps)")
     post(t, "/api/projects/bulk_delete", q=key)          # keep only the report, not the project
