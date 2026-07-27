@@ -10,6 +10,11 @@ target/
 build/
 .gradle/
 
+# go
+/dist/
+/sq-dce-benchmark
+/sq-dce-benchmark.exe
+
 # python
 __pycache__/
 *.pyc

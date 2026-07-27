@@ -9,6 +9,29 @@ produces a PDF report — designed to show the impact of DCE on analysis feedbac
 > internal report format via `api/ce/submit` (unsupported internals). Run it only
 > against **non-production** instances.
 
+## Go build & distribution (this branch)
+
+This branch is a **Go port** of the Python tool — same replay method, same
+`bench.yaml`, same report — packaged as a **single static binary** so it runs on
+locked-down machines with no Python, pip, or PyPI access.
+
+```bash
+go build -o sq-dce-benchmark .                 # local build
+./sq-dce-benchmark run --config bench.yaml     # same CLI as the Python tool
+```
+
+Cross-compile release binaries for macOS/Linux/Windows (arm64 + amd64), the way
+sonar-golc ships:
+
+```bash
+./build-release.sh v1.0.0                      # -> dist/v1.0.0/*.zip
+```
+
+The CLI (`run` / `cleanup` / `report` / `version`) and `bench.yaml` are identical
+to the Python tool — just replace `python3 sq_bench.py` with `./sq-dce-benchmark`.
+Scanners are unchanged: Java still needs a JDK + Maven/Gradle, cli scans still need
+the SonarScanner CLI. The report is a compact vector PDF (via gofpdf).
+
 ## Compatible languages
 
 Java, JavaScript/TypeScript, Python, Go, PHP, Kotlin, Ruby, Scala, HTML/CSS, XML, YAML,
