@@ -99,7 +99,7 @@ A filled-in `bench.yaml` (tokens redacted):
 seed_repo: /repos/acme-web          # a representative ~78K-ncloc service
 n: 40
 concurrency: 12
-scanner: sonar-scanner
+scan_mode: auto
 namespace: ee_vs_dce_benchmark_test
 report: ./acme-ee-vs-dce.pdf
 results_file: ./results.json
@@ -112,7 +112,7 @@ targets:
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
 ```
 
-Run each target while the other is idle (they shared one host in this lab):
+Run each target while the other is idle so they don't compete for CPU:
 
 ```text
 $ python3 sq_bench.py run --config bench.yaml --only DCE-12
@@ -126,7 +126,7 @@ $ python3 sq_bench.py run --config bench.yaml --only DCE-12
   pre-creating 40 projects ...
   staging 40 reports ...
   firing burst (N=40, concurrency=12) ...
-  → 40/40 ok | drain 15s | wait avg 5.6s p95 11s | queue avg 14.8 peak 35
+  → 40/40 ok | drain 15s | wait avg 5.6s p95 11s | throughput 9600/hr
 
 $ python3 sq_bench.py run --config bench.yaml --only EE-6
 === EE-6  (https://sonarqube-ee.acme.internal) ===
@@ -135,14 +135,15 @@ $ python3 sq_bench.py run --config bench.yaml --only EE-6
   validating one replay ...
   ✓ replay valid (ncloc=77774)
   ...
-  → 40/40 ok | drain 39s | wait avg 16.8s p95 31s | queue avg 17.7 peak 37
+  → 40/40 ok | drain 39s | wait avg 16.8s p95 31s | throughput 3692/hr
 
 Report written: ./acme-ee-vs-dce.pdf
 ```
 
-The report contains this table plus a queue-size-over-time chart:
+The report contains a side-by-side table (illustrative numbers) plus a
+queue-size-over-time chart:
 
-| Metric — N=40 burst | EE-6 | DCE-12 |
+| Metric — N=40 burst | EE | DCE |
 |---|---|---|
 | Workers (detected) | 6 | 12 (4/node × 3) |
 | Tasks OK | 40 | 40 |
@@ -150,21 +151,16 @@ The report contains this table plus a queue-size-over-time chart:
 | Throughput (tasks/hr) | 3,692 | **9,600** |
 | Avg queue wait (s) | 16.8 | **5.6** |
 | p95 queue wait (s) | 31 | **11** |
-| Peak queue size | 37 | 35 |
 | CE time / task (s) | 5.0 | 3.4 |
 
-**Reading it:** with 2× the workers across nodes, DCE drained the same burst **~2.6× faster**
-(15 s vs 39 s) and cut **average developer wait ~67%** (5.6 s vs 16.8 s). On separate
-production hardware — where nodes don't share CPUs — the gap is larger still.
-
-> Numbers above are from a same-machine lab (EE and DCE sharing one host, run one at a
-> time). Yours will differ with hardware, project size, `n`, and worker counts.
+Lower is better on every row. Your numbers will vary with hardware, project size, `n`,
+and worker counts — run EE and DCE on **separate hardware** for a representative result.
 
 ## For a fair, meaningful result
 
 - **Same version** on both instances (the validator aborts if a replay fails).
 - **Comparable hardware/DB** for the EE node and each DCE node; **equal per-worker CE
-  heap** (~1–2 GB). Undersized heap causes failures that look like "DCE is slow".
+  heap** (~1–2 GB).
 - **DCE app nodes on separate hosts** — DCE's throughput advantage comes from adding
   machines; all-nodes-on-one-VM cannot out-throughput EE.
 - Decide the worker comparison up front, e.g. **EE 6 workers vs DCE 12** (4/node × 3), and
@@ -178,7 +174,7 @@ production hardware — where nodes don't share CPUs — the gap is larger still
 ## Output
 
 A PDF with a side-by-side metrics table (drain time, throughput, avg/p95 queue wait,
-avg/peak queue size, CE time per task) and a **queue-size-over-time** chart.
+CE time per task) and a **queue-size-over-time** chart.
 
 ### Production model (optional)
 
@@ -189,15 +185,15 @@ population you choose:
 
 ```yaml
 model:
-  devs: 5000               # developer population
-  analyses_per_dev_day: 8  # PRs, branches, CI per dev/day
-  peak_fraction: 0.15      # share landing in the peak hour
+  devs: 5000                # developer population
+  analyses_per_dev_day: 15  # PRs, branches, CI per dev/day
+  peak_fraction: 0.25       # share landing in the peak hour
 ```
 
-It renders the assumptions (e.g. *5,000 devs × 8/day = 40,000/day; ~15% peak ≈ 6,000/hr*),
+It renders the assumptions (e.g. *5,000 devs × 15/day = 75,000/day; ~25% peak ≈ 18,750/hr*),
 a capacity/utilisation/feedback-delay table per configuration (including a DCE "headroom"
-row at more workers/node), and a chart marking where a single EE node saturates while the
-DCE cluster stays near zero. Change `devs` and re-run `report` to re-model instantly.
+row at more workers/node), and a chart showing where each configuration saturates as load
+rises. Change `devs` and re-run `report` to re-model instantly.
 
 ## Files
 
