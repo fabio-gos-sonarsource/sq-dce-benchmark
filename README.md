@@ -5,8 +5,8 @@ SonarQube **Enterprise Edition** node and a **Data Center Edition** cluster, and
 produces a PDF report — designed to show the impact of DCE on analysis feedback
 (queue behaviour) at scale.
 
-It ships as a **single static binary** — no Python, no pip, no runtime to install —
-so it runs on locked-down machines that only allow a downloaded executable.
+It ships as a **single static binary** with no dependencies to install, so it runs
+on locked-down machines that only allow a downloaded executable.
 
 > ⚠️ **Non-production benchmark.** It generates load by replaying SonarScanner's
 > internal report format via `api/ce/submit` (unsupported internals). Run it only
@@ -29,7 +29,7 @@ Or build from source (Go 1.24+):
 go build -o sq-dce-benchmark .
 ```
 
-Maintainers cross-compile all platforms at once (the way sonar-golc ships):
+Maintainers cross-compile all platforms at once:
 
 ```bash
 ./build-release.sh v1.0.0        # -> dist/v1.0.0/*.zip
@@ -43,7 +43,7 @@ Verify it runs:
 
 ## What you need
 
-- The **`sq-dce-benchmark` binary** (above) — no Python / pip / PyPI.
+- The **`sq-dce-benchmark` binary** (above) — nothing else to install.
 - A scanner for your seed project's language (see *Compatible languages*): the
   **SonarScanner CLI** for source-analysed languages, or **Maven/Gradle + a JDK** for Java.
 - A **SonarQube Enterprise Edition** and a **Data Center Edition** instance (2026.1+),
