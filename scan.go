@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync/atomic"
-	"syscall"
 	"time"
 )
 
@@ -219,7 +218,7 @@ func runScan(t Target, name string, args []string, cwd string, cfg *Config, mode
 		fmt.Printf("  JAVA_HOME: %s\n", cfg.JavaHome)
 	}
 	cmd.Env = env
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // own process group
+	setProcessGroup(cmd) // own process group so the whole build tree can be killed on timeout
 
 	pr, pw, err := os.Pipe()
 	if err != nil {
@@ -240,7 +239,7 @@ func runScan(t Target, name string, args []string, cwd string, cfg *Config, mode
 		case <-done:
 		case <-time.After(time.Duration(timeout) * time.Second):
 			timedOut.Store(true)
-			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // kill the whole group
+			killProcessGroup(cmd) // kill mvn/gradle AND its child JVMs/npm
 		}
 	}()
 
