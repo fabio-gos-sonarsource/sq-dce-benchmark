@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -164,10 +165,15 @@ func produceSeedReport(t Target, cfg *Config, workdir string) string {
 	case "gradle":
 		gw := cfg.Gradle
 		if gw == "" {
-			if exists(filepath.Join(seed, "gradlew")) {
-				gw = "./gradlew"
-			} else {
-				gw = "gradle"
+			winWrap := filepath.Join(seed, "gradlew.bat")
+			nixWrap := filepath.Join(seed, "gradlew")
+			switch {
+			case runtime.GOOS == "windows" && exists(winWrap):
+				gw = winWrap // absolute path avoids relative-vs-cmd.Dir resolution issues
+			case runtime.GOOS != "windows" && exists(nixWrap):
+				gw = nixWrap
+			default:
+				gw = "gradle" // fall back to gradle on PATH
 			}
 		}
 		name = gw
