@@ -46,30 +46,50 @@ type ceTask struct {
 	ErrorMessage    string `json:"errorMessage"`
 }
 
+// submit enqueues one CE task by POSTing the re-keyed report zip. It checks the
+// HTTP status (a 5xx/429 or a dropped connection is NOT a Go error) and RETRIES
+// transient failures so a flaky network/LB can't silently shrink the burst.
+// 2xx = success; 4xx (auth/rejected report) is not retried.
 func submit(t Target, key, zipPath string) error {
-	f, err := os.Open(zipPath)
+	data, err := os.ReadFile(zipPath) // read once; rebuild the body per attempt
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, _ := mw.CreateFormFile("report", "scanner-report.zip")
-	if _, err := io.Copy(fw, f); err != nil {
-		return err
-	}
-	mw.Close()
 	q := url.Values{"projectKey": {key}, "projectName": {key}}
-	ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-	defer cancel()
-	req := newRequest(ctx, "POST", targetURL(t, "/api/ce/submit", q), t.Token, &buf)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	resp, err := httpClient.Do(req)
-	if err != nil {
-		return err
+	var last error
+	for attempt := 1; attempt <= 5; attempt++ {
+		var buf bytes.Buffer
+		mw := multipart.NewWriter(&buf)
+		fw, _ := mw.CreateFormFile("report", "scanner-report.zip")
+		fw.Write(data)
+		mw.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
+		req := newRequest(ctx, "POST", targetURL(t, "/api/ce/submit", q), t.Token, &buf)
+		req.Header.Set("Content-Type", mw.FormDataContentType())
+		resp, err := httpClient.Do(req)
+		if err != nil {
+			last = err // connection reset / timeout -> retry
+		} else {
+			code := resp.StatusCode
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<16))
+			resp.Body.Close()
+			switch {
+			case code >= 200 && code < 300:
+				cancel()
+				return nil
+			case code >= 400 && code < 500: // auth / rejected report -> not transient
+				cancel()
+				return fmt.Errorf("HTTP %d", code)
+			default: // 5xx / 429 -> retry
+				last = fmt.Errorf("HTTP %d", code)
+			}
+		}
+		cancel()
+		if attempt < 5 {
+			time.Sleep(time.Duration(attempt) * time.Second)
+		}
 	}
-	resp.Body.Close()
-	return nil
+	return last
 }
 
 func precreate(t Target, keys []string) {
@@ -136,19 +156,28 @@ func startSampler(t Target) func() (float64, int, []int) {
 	}
 }
 
-func fireBurst(t Target, keys []string, zips map[string]string, conc int) {
+// fireBurst submits all keys concurrently and returns how many ultimately failed
+// (after retries), so the caller can warn that the burst was smaller than N.
+func fireBurst(t Target, keys []string, zips map[string]string, conc int) int {
 	sem := make(chan struct{}, conc)
 	var wg sync.WaitGroup
+	var mu sync.Mutex
+	failed := 0
 	for _, k := range keys {
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(k string) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			submit(t, k, zips[k])
+			if err := submit(t, k, zips[k]); err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+			}
 		}(k)
 	}
 	wg.Wait()
+	return failed
 }
 
 func waitDrain(t Target, timeoutSec int) {
@@ -225,8 +254,7 @@ func collect(t Target, ns string) Metrics {
 	var resp struct {
 		Tasks []ceTask `json:"tasks"`
 	}
-	r, err := get(t, "/api/ce/activity", url.Values{"q": {ns}, "ps": {"500"}, "status": {"SUCCESS,FAILED,CANCELED"}})
-	jsonInto(r, err, "ce/activity", &resp)
+	getJSON(t, "/api/ce/activity", url.Values{"q": {ns}, "ps": {"500"}, "status": {"SUCCESS,FAILED,CANCELED"}}, "ce/activity", &resp)
 	re := regexp.MustCompile("^" + regexp.QuoteMeta(ns) + `-\d+$`)
 	type row struct {
 		wait, proc float64
@@ -350,7 +378,9 @@ func runTarget(t Target, cfg *Config) Metrics {
 
 	stop := startSampler(t)
 	fmt.Printf("  firing burst (N=%d, concurrency=%d) ...\n", N, cfg.concurrency())
-	fireBurst(t, keys, zips, cfg.concurrency())
+	if failed := fireBurst(t, keys, zips, cfg.concurrency()); failed > 0 {
+		fmt.Printf("  ⚠ %d/%d submissions failed after retries — burst was smaller than requested\n", failed, N)
+	}
 	waitDrain(t, 1800)
 	time.Sleep(2 * time.Second)
 	qAvg, qPeak, series := stop()

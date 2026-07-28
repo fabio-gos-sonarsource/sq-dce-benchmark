@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,16 @@ import (
 )
 
 var httpClient = &http.Client{}
+
+const maxBody = 16 << 20 // 16 MiB — headroom for large api/ce/activity responses
+
+func snippet(b []byte) string {
+	s := strings.Join(strings.Fields(string(b)), " ")
+	if len(s) > 300 {
+		s = s[:300]
+	}
+	return s
+}
 
 // newRequest builds a request with basic-token auth and the headers that keep
 // ngrok / proxies from returning an HTML interstitial instead of JSON.
@@ -50,13 +61,9 @@ func jsonInto(r *http.Response, err error, what string, v any) {
 		die("[%s] request failed: %v", what, err)
 	}
 	defer r.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	body, _ := io.ReadAll(io.LimitReader(r.Body, maxBody))
 	ct := r.Header.Get("Content-Type")
 	if r.StatusCode >= 400 || !strings.Contains(strings.ToLower(ct), "json") {
-		snippet := strings.Join(strings.Fields(string(body)), " ")
-		if len(snippet) > 300 {
-			snippet = snippet[:300]
-		}
 		hint := "\n  -> Check the instance URL is reachable and returns the SonarQube API (not a proxy page)."
 		if strings.Contains(r.Request.URL.Host, "ngrok") {
 			hint = "\n  -> This is an ngrok tunnel; an HTML body is usually ngrok's browser-warning/error page. Confirm the tunnel is up and the token is valid."
@@ -64,11 +71,54 @@ func jsonInto(r *http.Response, err error, what string, v any) {
 			hint = fmt.Sprintf("\n  -> HTTP %d: the token needs admin (create-project + execute-analysis).", r.StatusCode)
 		}
 		die("[%s] expected JSON from %s but got HTTP %d (%s). First bytes: %q%s",
-			what, r.Request.URL, r.StatusCode, ct, snippet, hint)
+			what, r.Request.URL, r.StatusCode, ct, snippet(body), hint)
 	}
 	if err := json.Unmarshal(body, v); err != nil {
 		die("[%s] invalid JSON from %s: %v", what, r.Request.URL, err)
 	}
+}
+
+// getJSON does a GET and decodes JSON into v, RETRYING transient failures
+// (connection resets, empty/truncated bodies, invalid JSON, 5xx/429) — common on
+// flaky tunnels like ngrok's free tier under load. Auth failures (401/403) are fatal
+// immediately. Used for read-only calls whose result we can't afford to lose (e.g.
+// collecting metrics after the burst).
+func getJSON(t Target, path string, q url.Values, what string, v any) {
+	last := "unknown error"
+	for attempt := 1; attempt <= 5; attempt++ {
+		r, err := get(t, path, q)
+		if err != nil {
+			last = err.Error()
+		} else {
+			body, rerr := io.ReadAll(io.LimitReader(r.Body, maxBody))
+			ct := r.Header.Get("Content-Type")
+			r.Body.Close()
+			switch {
+			case r.StatusCode == 401 || r.StatusCode == 403:
+				die("[%s] HTTP %d from %s — the token needs admin (create-project + execute-analysis).", what, r.StatusCode, r.Request.URL)
+			case rerr != nil:
+				last = "reading response body: " + rerr.Error()
+			case r.StatusCode >= 500 || r.StatusCode == 429:
+				last = fmt.Sprintf("HTTP %d: %s", r.StatusCode, snippet(body))
+			case r.StatusCode >= 400 || !strings.Contains(strings.ToLower(ct), "json"):
+				die("[%s] expected JSON from %s but got HTTP %d (%s): %s", what, r.Request.URL, r.StatusCode, ct, snippet(body))
+			case len(bytes.TrimSpace(body)) == 0:
+				last = "empty response body"
+			default:
+				if e := json.Unmarshal(body, v); e != nil {
+					last = "truncated/invalid JSON: " + e.Error()
+				} else {
+					return // success
+				}
+			}
+		}
+		if attempt < 5 {
+			time.Sleep(time.Duration(attempt) * time.Second) // linear backoff: 1s,2s,3s,4s
+		}
+	}
+	die("[%s] failed after 5 attempts (last: %s).\n"+
+		"  If this is an ngrok tunnel, the free tier can drop large responses under load — retry, or "+
+		"use a direct URL / paid tunnel.", what, last)
 }
 
 // validateToken is the preflight: token authenticates AND has global Administer System.
@@ -113,8 +163,7 @@ func fetchProfiles(t Target) map[string]string {
 			Key      string `json:"key"`
 		} `json:"profiles"`
 	}
-	r, err := get(t, "/api/qualityprofiles/search", url.Values{"defaults": {"true"}})
-	jsonInto(r, err, "qualityprofiles/search", &resp)
+	getJSON(t, "/api/qualityprofiles/search", url.Values{"defaults": {"true"}}, "qualityprofiles/search", &resp)
 	m := make(map[string]string, len(resp.Profiles))
 	for _, p := range resp.Profiles {
 		m[p.Language] = p.Key
