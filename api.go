@@ -19,7 +19,7 @@ func newRequest(ctx context.Context, method, u, token string, body io.Reader) *h
 	req, _ := http.NewRequestWithContext(ctx, method, u, body)
 	req.SetBasicAuth(token, "")
 	req.Header.Set("ngrok-skip-browser-warning", "true")
-	req.Header.Set("User-Agent", "sq-dce-benchmark/1.0")
+	req.Header.Set("User-Agent", "sq-benchmark/1.0")
 	return req
 }
 

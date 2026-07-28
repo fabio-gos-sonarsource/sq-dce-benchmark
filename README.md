@@ -14,19 +14,20 @@ on locked-down machines that only allow a downloaded executable.
 
 ## Get the binary
 
-Download the archive for your OS/architecture from the release, unzip it, and run the
-`sq-dce-benchmark` binary inside.
+Download the archive for your OS/architecture from the release and unzip it. Each
+archive holds the `sq-benchmark` binary, `bench.example.yaml`, and a double-click
+launcher (`run.command` on macOS, `run.bat` on Windows).
 
 | Platform | Archive |
 |---|---|
-| macOS (Apple Silicon / Intel) | `sq-dce-benchmark_<ver>_darwin_arm64.zip` · `…_darwin_amd64.zip` |
+| macOS (Apple Silicon / Intel) | `sq-benchmark_<ver>_darwin_arm64.zip` · `…_darwin_amd64.zip` |
 | Linux (arm64 / x86-64) | `…_linux_arm64.zip` · `…_linux_amd64.zip` |
 | Windows (x86-64 / arm64) | `…_windows_amd64.zip` · `…_windows_arm64.zip` |
 
 Or build from source (Go 1.24+):
 
 ```bash
-go build -o sq-dce-benchmark .
+go build -o sq-benchmark .
 ```
 
 Maintainers cross-compile all platforms at once:
@@ -38,12 +39,12 @@ Maintainers cross-compile all platforms at once:
 Verify it runs:
 
 ```bash
-./sq-dce-benchmark version
+./sq-benchmark version
 ```
 
 ## What you need
 
-- The **`sq-dce-benchmark` binary**.
+- The **`sq-benchmark` binary**.
 - A **SonarQube Enterprise Edition** and a **Data Center Edition** instance (2026.1+),
   reachable from this machine.
 - An **admin token** for each instance: it needs create-project, execute-analysis and
@@ -110,14 +111,20 @@ seed_repo: /path/to/your/repo
 
 ## Run
 
+With `bench.yaml` next to the binary, just **double-click `run.command` (macOS) /
+`run.bat` (Windows)** — or from a terminal:
+
 ```bash
-./sq-dce-benchmark run --config bench.yaml
+./sq-benchmark          # no arguments: runs using the nearest bench.yaml
 ```
 
-Per target it will: scan the seed once → validate one replay (fail fast if versions
-differ) → pre-create N projects → replay N in parallel while sampling the queue every
-second → collect `api/ce/activity` metrics → delete the bench projects. Then it writes
-the comparison **PDF** (`report:` path).
+(`--config <file>` is optional; it defaults to a `bench.yaml` in the current folder or
+next to the binary.)
+
+Per target it will: get the seed report (a bundled sample, or scan your `seed_repo`) →
+validate one replay (fail fast if versions differ) → pre-create N projects → replay N in
+parallel while sampling the queue every second → collect `api/ce/activity` metrics →
+delete the bench projects. Then it writes the comparison **PDF** (`report:` path).
 
 ### Run targets independently (recommended when EE and DCE share hardware)
 
@@ -125,15 +132,15 @@ If both instances aren't on separate hardware, run each **on its own** so they d
 compete for CPU — results accumulate into `results_file` and the report combines them:
 
 ```bash
-./sq-dce-benchmark run    --config bench.yaml --only EE     # (DCE idle/stopped)
-./sq-dce-benchmark run    --config bench.yaml --only DCE    # (EE idle/stopped)
-./sq-dce-benchmark report --config bench.yaml               # combined PDF from results.json
+./sq-benchmark run    --only EE     # (DCE idle/stopped)
+./sq-benchmark run    --only DCE    # (EE idle/stopped)
+./sq-benchmark report               # combined PDF from results.json
 ```
 
 Clean up anytime (e.g. after an interrupted run):
 
 ```bash
-./sq-dce-benchmark cleanup --config bench.yaml
+./sq-benchmark cleanup
 ```
 
 ## Example run & output
@@ -193,15 +200,16 @@ model:
 
 It renders the assumptions (e.g. *5,000 devs × 15/day = 75,000/day; ~25% peak ≈ 18,750/hr*),
 a capacity/utilisation/feedback-delay table — the **measured** EE and DCE configs plus
-auto-generated **DCE sizing scenarios** (several node × workers/node combinations, with the
-recommended one highlighted) — and a chart showing where each configuration saturates as
-load rises. Change `devs` and re-run `report` to re-model instantly.
+auto-generated **DCE sizing estimates** (several node × workers/node combinations) — and a
+chart showing where each configuration saturates as load rises. Change `devs` and re-run
+`report` to re-model instantly.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `sq-dce-benchmark` | the CLI binary (`run` / `cleanup` / `report` / `version`) |
+| `sq-benchmark` | the CLI binary (`run` / `cleanup` / `report` / `version`) |
+| `run.command` / `run.bat` | double-click launchers (macOS / Windows) |
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
 | `build-release.sh` | cross-compile the binaries for all platforms |
 | `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |

@@ -1,7 +1,7 @@
-// Command sq-dce-benchmark compares Compute Engine (CE) throughput between a
-// SonarQube Enterprise Edition node and a Data Center Edition cluster and writes
-// a PDF report. It uses the "replay" method: scan a seed project ONCE per target,
-// then replay that one report N times as distinct projects to create an instant CE burst.
+// Command sq-benchmark compares Compute Engine (CE) throughput between a SonarQube
+// Enterprise Edition node and a Data Center Edition cluster and writes a PDF report.
+// It uses the "replay" method: scan a seed project ONCE per target, then replay that
+// one report N times as distinct projects to create an instant CE burst.
 //
 // NON-PRODUCTION BENCHMARK: it POSTs SonarScanner's internal report format to
 // api/ce/submit (unsupported internals). Run only against non-prod instances.
@@ -10,6 +10,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,10 +35,10 @@ type Model struct {
 	CeSeconds         float64 `yaml:"ce_seconds"`
 }
 
-// Config mirrors bench.yaml.
+// Config mirrors bench.yaml. Only `targets` is required; everything else defaults.
 type Config struct {
-	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> use a bundled sample
-	Sample       string            `yaml:"sample"`    // which bundled sample when seed_repo is empty: python | java
+	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> bundled sample
+	Sample       string            `yaml:"sample"`    // bundled sample when seed_repo is empty: python | java
 	N            int               `yaml:"n"`
 	Concurrency  int               `yaml:"concurrency"`
 	ScanMode     string            `yaml:"scan_mode"`
@@ -75,7 +77,7 @@ func (c *Config) reportPath() string {
 	if c.Report != "" {
 		return c.Report
 	}
-	return "sq-dce-benchmark-report.pdf"
+	return "sq-ee-dce-benchmark.pdf"
 }
 
 func die(format string, a ...any) {
@@ -92,30 +94,63 @@ func loadConfig(path string) *Config {
 	if err := yaml.Unmarshal(b, &c); err != nil {
 		die("invalid YAML in %s: %v", path, err)
 	}
-	if len(c.Targets) == 0 || c.N == 0 || c.Namespace == "" {
-		die("config missing one of: targets, n, namespace")
+	if len(c.Targets) == 0 {
+		die("config %s has no targets — add at least one instance with a url and token", path)
+	}
+	for _, t := range c.Targets {
+		if t.URL == "" || t.Token == "" {
+			die("target %q needs both a url and a token", t.Name)
+		}
+	}
+	// defaults so the user only has to fill in targets
+	if c.N == 0 {
+		c.N = 40
+	}
+	if c.Namespace == "" {
+		c.Namespace = "sq_ee_dce_benchmark"
+	}
+	if c.Sample == "" {
+		c.Sample = "python"
 	}
 	return &c
 }
 
+// discoverConfig finds bench.yaml when --config isn't given: current folder first,
+// then next to the executable (so a double-clicked binary finds the adjacent config).
+func discoverConfig() string {
+	if exists("bench.yaml") {
+		return "bench.yaml"
+	}
+	if exe, err := os.Executable(); err == nil {
+		p := filepath.Join(filepath.Dir(exe), "bench.yaml")
+		if exists(p) {
+			return p
+		}
+	}
+	die("no bench.yaml found (in this folder or next to the binary).\n" +
+		"  Copy bench.example.yaml to bench.yaml and fill in your two instances, or pass --config <file>.")
+	return ""
+}
+
 func usage() {
-	die("usage: sq-dce-benchmark <run|cleanup|report> --config bench.yaml [--only NAME]")
+	fmt.Println("sq-benchmark — SonarQube EE vs DCE Compute Engine throughput benchmark")
+	fmt.Println()
+	fmt.Println("Usage: sq-benchmark [run|cleanup|report] [--config bench.yaml] [--only NAME]")
+	fmt.Println("  With no arguments it runs the benchmark using the nearest bench.yaml.")
 }
 
 func main() {
 	args := os.Args[1:]
-	if len(args) < 1 {
-		usage()
-	}
-	command := args[0]
-	if command == "version" || command == "--version" || command == "-v" {
-		fmt.Println("sq-dce-benchmark", version)
-		return
+	command := "run" // default so a bare invocation / double-click just runs
+	i := 0
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		command = args[0]
+		i = 1
 	}
 	var configPath, only string
-	for i := 1; i < len(args); i++ {
+	for ; i < len(args); i++ {
 		switch args[i] {
-		case "--config":
+		case "--config", "-c":
 			i++
 			if i < len(args) {
 				configPath = args[i]
@@ -125,12 +160,24 @@ func main() {
 			if i < len(args) {
 				only = args[i]
 			}
-		default:
-			usage()
+		case "--version", "-v":
+			command = "version"
+		case "--help", "-h":
+			command = "help"
 		}
 	}
-	if configPath == "" {
+
+	switch command {
+	case "version":
+		fmt.Println("sq-benchmark", version)
+		return
+	case "help":
 		usage()
+		return
+	}
+
+	if configPath == "" {
+		configPath = discoverConfig()
 	}
 	cfg := loadConfig(configPath)
 
@@ -143,5 +190,6 @@ func main() {
 		cmdReport(cfg)
 	default:
 		usage()
+		os.Exit(1)
 	}
 }

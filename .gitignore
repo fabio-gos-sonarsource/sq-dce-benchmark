@@ -12,8 +12,11 @@ build/
 
 # go
 /dist/
-/sq-dce-benchmark
-/sq-dce-benchmark.exe
+/sq-benchmark
+/sq-benchmark.exe
+
+# macOS
+.DS_Store
 
 # seed repos dropped into the folder must not be committed
 /juice-shop/
