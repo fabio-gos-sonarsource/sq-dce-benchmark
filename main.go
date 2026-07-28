@@ -33,6 +33,18 @@ type Model struct {
 	AnalysesPerDevDay float64 `yaml:"analyses_per_dev_day"`
 	PeakFraction      float64 `yaml:"peak_fraction"`
 	CeSeconds         float64 `yaml:"ce_seconds"`
+	// Optional PR/branch mix: real traffic is mostly cheap PR analyses (changeset-sized)
+	// plus some full branch analyses. If both CE times are given, the model uses a blended
+	// per-analysis CE time instead of the single measured value.
+	PRFraction      float64 `yaml:"pr_fraction"`       // 0..1 share of analyses that are PRs
+	PRCeSeconds     float64 `yaml:"pr_ce_seconds"`     // CE time for a typical PR analysis
+	BranchCeSeconds float64 `yaml:"branch_ce_seconds"` // CE time for a full/branch analysis
+}
+
+// LoadSpec drives a sustained arrival rate over time instead of a one-shot burst.
+type LoadSpec struct {
+	RatePerMin  int `yaml:"rate_per_min"` // analyses submitted per minute
+	DurationSec int `yaml:"duration_sec"` // for how long
 }
 
 // Config mirrors bench.yaml. Only `targets` is required; everything else defaults.
@@ -55,6 +67,7 @@ type Config struct {
 	Exclusions   string            `yaml:"exclusions"`
 	KeepProjects bool              `yaml:"keep_projects"`
 	ScanTimeout  int               `yaml:"scan_timeout"`
+	Load         *LoadSpec         `yaml:"load"`
 	Model        *Model            `yaml:"model"`
 	Targets      []Target          `yaml:"targets"`
 }

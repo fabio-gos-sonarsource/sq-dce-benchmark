@@ -180,6 +180,42 @@ func fireBurst(t Target, keys []string, zips map[string]string, conc int) int {
 	return failed
 }
 
+// fireSustained submits keys at a steady rate (analyses/sec), so the queue reflects a
+// sustained arrival rate rather than a one-shot burst — this is the regime where a single
+// EE node saturates (queue grows) while a bigger DCE cluster keeps up (queue stays flat).
+// It runs for ~len(keys)/rate seconds and returns how many submissions failed after retries.
+func fireSustained(t Target, keys []string, zips map[string]string, ratePerSec float64) int {
+	if ratePerSec <= 0 {
+		ratePerSec = 1
+	}
+	interval := time.Duration(float64(time.Second) / ratePerSec)
+	if interval < time.Millisecond {
+		interval = time.Millisecond
+	}
+	sem := make(chan struct{}, 64) // cap concurrent in-flight uploads
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	failed := 0
+	tk := time.NewTicker(interval)
+	defer tk.Stop()
+	for _, k := range keys {
+		<-tk.C // release one submission per tick to hold the target rate
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(k string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if err := submit(t, k, zips[k]); err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+			}
+		}(k)
+	}
+	wg.Wait()
+	return failed
+}
+
 func waitDrain(t Target, timeoutSec int) {
 	deadline := time.Now().Add(time.Duration(timeoutSec) * time.Second)
 	for time.Now().Before(deadline) {
@@ -358,18 +394,32 @@ func runTarget(t Target, cfg *Config) Metrics {
 	}
 	fmt.Printf("  ✓ replay valid (%s)\n", info)
 
-	N := cfg.N
-	keys := make([]string, N)
-	for i := 0; i < N; i++ {
-		keys[i] = fmt.Sprintf("%s-%03d", ns, i+1)
+	// workload: a sustained arrival rate (load:) or a one-shot burst (n)
+	sustained := cfg.Load != nil && cfg.Load.RatePerMin > 0 && cfg.Load.DurationSec > 0
+	count := cfg.N
+	ratePerSec := 0.0
+	if sustained {
+		ratePerSec = float64(cfg.Load.RatePerMin) / 60.0
+		count = int(ratePerSec * float64(cfg.Load.DurationSec))
+		if count < 1 {
+			count = 1
+		}
+		if count > 5000 {
+			fmt.Println("  (capping sustained load to 5000 analyses — lower rate_per_min or duration_sec)")
+			count = 5000
+		}
 	}
-	fmt.Printf("  pre-creating %d projects ...\n", N)
+	keys := make([]string, count)
+	for i := 0; i < count; i++ {
+		keys[i] = fmt.Sprintf("%s-%06d", ns, i+1)
+	}
+	fmt.Printf("  pre-creating %d projects ...\n", count)
 	precreate(t, keys)
-	fmt.Printf("  staging %d reports ...\n", N)
+	fmt.Printf("  staging %d reports ...\n", count)
 	base := time.Now().UnixMilli()
-	zips := make(map[string]string, N)
+	zips := make(map[string]string, count)
 	for i, k := range keys {
-		z, err := stageZip(rep, k, base-int64(N-(i+1))*2000, profiles, stage)
+		z, err := stageZip(rep, k, base-int64(count-(i+1))*2000, profiles, stage)
 		if err != nil {
 			die("staging failed: %v", err)
 		}
@@ -377,9 +427,16 @@ func runTarget(t Target, cfg *Config) Metrics {
 	}
 
 	stop := startSampler(t)
-	fmt.Printf("  firing burst (N=%d, concurrency=%d) ...\n", N, cfg.concurrency())
-	if failed := fireBurst(t, keys, zips, cfg.concurrency()); failed > 0 {
-		fmt.Printf("  ⚠ %d/%d submissions failed after retries — burst was smaller than requested\n", failed, N)
+	var failed int
+	if sustained {
+		fmt.Printf("  sustained load: %d/min for %ds (~%d analyses) ...\n", cfg.Load.RatePerMin, cfg.Load.DurationSec, count)
+		failed = fireSustained(t, keys, zips, ratePerSec)
+	} else {
+		fmt.Printf("  firing burst (N=%d, concurrency=%d) ...\n", count, cfg.concurrency())
+		failed = fireBurst(t, keys, zips, cfg.concurrency())
+	}
+	if failed > 0 {
+		fmt.Printf("  ⚠ %d/%d submissions failed after retries — load was smaller than requested\n", failed, count)
 	}
 	waitDrain(t, 1800)
 	time.Sleep(2 * time.Second)
