@@ -54,30 +54,6 @@ func post(t Target, path string, q url.Values) (*http.Response, error) {
 	return httpClient.Do(newRequest(ctx, "POST", targetURL(t, path, q), t.Token, nil))
 }
 
-// jsonInto validates the response is a 2xx JSON body and decodes it, or exits
-// with an actionable message when a response isn't JSON.
-func jsonInto(r *http.Response, err error, what string, v any) {
-	if err != nil {
-		die("[%s] request failed: %v", what, err)
-	}
-	defer r.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(r.Body, maxBody))
-	ct := r.Header.Get("Content-Type")
-	if r.StatusCode >= 400 || !strings.Contains(strings.ToLower(ct), "json") {
-		hint := "\n  -> Check the instance URL is reachable and returns the SonarQube API (not a proxy page)."
-		if strings.Contains(r.Request.URL.Host, "ngrok") {
-			hint = "\n  -> This is an ngrok tunnel; an HTML body is usually ngrok's browser-warning/error page. Confirm the tunnel is up and the token is valid."
-		} else if r.StatusCode == 401 || r.StatusCode == 403 {
-			hint = fmt.Sprintf("\n  -> HTTP %d: the token needs admin (create-project + execute-analysis).", r.StatusCode)
-		}
-		die("[%s] expected JSON from %s but got HTTP %d (%s). First bytes: %q%s",
-			what, r.Request.URL, r.StatusCode, ct, snippet(body), hint)
-	}
-	if err := json.Unmarshal(body, v); err != nil {
-		die("[%s] invalid JSON from %s: %v", what, r.Request.URL, err)
-	}
-}
-
 // getJSON does a GET and decodes JSON into v, RETRYING transient failures
 // (connection resets, empty/truncated bodies, invalid JSON, 5xx/429) — common on
 // flaky tunnels like ngrok's free tier under load. Auth failures (401/403) are fatal
@@ -126,11 +102,9 @@ func validateToken(t Target) {
 	var v struct {
 		Valid bool `json:"valid"`
 	}
-	r, err := get(t, "/api/authentication/validate", nil)
-	if err != nil {
-		die("[%s] cannot reach %s (%v). Check the URL is correct and the instance is up and reachable from here.", t.Name, t.URL, err)
-	}
-	jsonInto(r, nil, "authentication/validate", &v)
+	// getJSON retries transient tunnel/LB blips (empty/truncated bodies, 5xx) so the
+	// preflight doesn't abort the whole run on a single hiccup.
+	getJSON(t, "/api/authentication/validate", nil, "authentication/validate", &v)
 	if !v.Valid {
 		die("[%s] token is INVALID for %s — check the target's token in bench.yaml (right instance? revoked/expired?).", t.Name, t.URL)
 	}
@@ -139,8 +113,7 @@ func validateToken(t Target) {
 			Global []string `json:"global"`
 		} `json:"permissions"`
 	}
-	rr, err := get(t, "/api/users/current", nil)
-	jsonInto(rr, err, "users/current", &cur)
+	getJSON(t, "/api/users/current", nil, "users/current", &cur)
 	for _, p := range cur.Permissions.Global {
 		if p == "admin" {
 			return
