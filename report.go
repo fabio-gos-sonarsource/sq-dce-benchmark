@@ -9,7 +9,7 @@ import (
 	"github.com/jung-kurt/gofpdf"
 )
 
-// palette + brand colours (match the Python report)
+// palette + brand colours
 var (
 	ink     = [3]int{0x22, 0x30, 0x3C}
 	mut     = [3]int{0x7A, 0x8A, 0x99}

@@ -1,8 +1,7 @@
 // Command sq-dce-benchmark compares Compute Engine (CE) throughput between a
 // SonarQube Enterprise Edition node and a Data Center Edition cluster and writes
-// a PDF report. It is a Go port of the original Python tool (same "replay" method:
-// scan a seed project ONCE per target, then replay that one report N times as
-// distinct projects to create an instant CE burst).
+// a PDF report. It uses the "replay" method: scan a seed project ONCE per target,
+// then replay that one report N times as distinct projects to create an instant CE burst.
 //
 // NON-PRODUCTION BENCHMARK: it POSTs SonarScanner's internal report format to
 // api/ce/submit (unsupported internals). Run only against non-prod instances.

@@ -17,8 +17,7 @@ import (
 	"time"
 )
 
-// Metrics is one target's result; JSON tags match the Python tool so results.json
-// files are interchangeable between the two implementations.
+// Metrics is one target's result; the JSON tags are the field names in results.json.
 type Metrics struct {
 	N              int     `json:"n"`
 	OK             int     `json:"ok"`

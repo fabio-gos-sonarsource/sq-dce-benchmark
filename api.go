@@ -44,7 +44,7 @@ func post(t Target, path string, q url.Values) (*http.Response, error) {
 }
 
 // jsonInto validates the response is a 2xx JSON body and decodes it, or exits
-// with an actionable message (the Go equivalent of the Python _json guard).
+// with an actionable message when a response isn't JSON.
 func jsonInto(r *http.Response, err error, what string, v any) {
 	if err != nil {
 		die("[%s] request failed: %v", what, err)
