@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +11,20 @@ import (
 	"time"
 )
 
-var httpClient = &http.Client{}
+// The timeout lives on the http.Client (not a per-call context), so it spans the
+// whole exchange INCLUDING reading the response body. A context cancelled when the
+// request helper returns would kill the body read for any response not already
+// buffered — which showed up as "context canceled" on large api/ce/activity replies.
+// All clients share one transport for connection pooling.
+var sharedTransport = http.DefaultTransport
+
+func newClient(d time.Duration) *http.Client { return &http.Client{Timeout: d, Transport: sharedTransport} }
+
+var (
+	getClient    = newClient(30 * time.Second)
+	postClient   = newClient(60 * time.Second)
+	submitClient = newClient(180 * time.Second)
+)
 
 const maxBody = 16 << 20 // 16 MiB — headroom for large api/ce/activity responses
 
@@ -26,8 +38,8 @@ func snippet(b []byte) string {
 
 // newRequest builds a request with basic-token auth and the headers that keep
 // ngrok / proxies from returning an HTML interstitial instead of JSON.
-func newRequest(ctx context.Context, method, u, token string, body io.Reader) *http.Request {
-	req, _ := http.NewRequestWithContext(ctx, method, u, body)
+func newRequest(method, u, token string, body io.Reader) *http.Request {
+	req, _ := http.NewRequest(method, u, body)
 	req.SetBasicAuth(token, "")
 	req.Header.Set("ngrok-skip-browser-warning", "true")
 	req.Header.Set("User-Agent", "sq-benchmark/1.0")
@@ -43,15 +55,11 @@ func targetURL(t Target, path string, q url.Values) string {
 }
 
 func get(t Target, path string, q url.Values) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	return httpClient.Do(newRequest(ctx, "GET", targetURL(t, path, q), t.Token, nil))
+	return getClient.Do(newRequest("GET", targetURL(t, path, q), t.Token, nil))
 }
 
 func post(t Target, path string, q url.Values) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return httpClient.Do(newRequest(ctx, "POST", targetURL(t, path, q), t.Token, nil))
+	return postClient.Do(newRequest("POST", targetURL(t, path, q), t.Token, nil))
 }
 
 // getJSON does a GET and decodes JSON into v, RETRYING transient failures

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -63,10 +62,9 @@ func submit(t Target, key, zipPath string) error {
 		fw, _ := mw.CreateFormFile("report", "scanner-report.zip")
 		fw.Write(data)
 		mw.Close()
-		ctx, cancel := context.WithTimeout(context.Background(), 180*time.Second)
-		req := newRequest(ctx, "POST", targetURL(t, "/api/ce/submit", q), t.Token, &buf)
+		req := newRequest("POST", targetURL(t, "/api/ce/submit", q), t.Token, &buf)
 		req.Header.Set("Content-Type", mw.FormDataContentType())
-		resp, err := httpClient.Do(req)
+		resp, err := submitClient.Do(req)
 		if err != nil {
 			last = err // connection reset / timeout -> retry
 		} else {
@@ -75,16 +73,13 @@ func submit(t Target, key, zipPath string) error {
 			resp.Body.Close()
 			switch {
 			case code >= 200 && code < 300:
-				cancel()
 				return nil
 			case code >= 400 && code < 500: // auth / rejected report -> not transient
-				cancel()
 				return fmt.Errorf("HTTP %d", code)
 			default: // 5xx / 429 -> retry
 				last = fmt.Errorf("HTTP %d", code)
 			}
 		}
-		cancel()
 		if attempt < 5 {
 			time.Sleep(time.Duration(attempt) * time.Second)
 		}
