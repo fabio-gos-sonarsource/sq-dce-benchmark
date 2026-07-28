@@ -127,27 +127,10 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	if len(est) > 4 {
 		est = est[:4]
 	}
-	recTotal := -1
-	if recIsMeasured {
-		recTotal = dceW
-	} else {
-		for _, tot := range est {
-			if util(float64(tot)) <= 70 {
-				recTotal = tot
-				break
-			}
-		}
-		if recTotal == -1 && len(est) > 0 {
-			recTotal = est[len(est)-1]
-		}
-	}
-
-	// build table rows
+	// build table rows: measured configs + one DCE sizing estimate per distinct capacity
 	rows := [][]string{{"Configuration", "Peak capacity", "Utilisation", "Avg feedback delay", "Type"}}
-	hi := map[int]bool{}
-	add := func(label string, w int, typ string) int {
+	add := func(label string, w int, typ string) {
 		rows = append(rows, []string{label, commas(capf(float64(w))) + "/hr", utilCell(w), delayCell(w), typ})
-		return len(rows) - 1
 	}
 	for _, n := range names {
 		m := results[n]
@@ -163,26 +146,14 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		if wpn == 0 {
 			wpn = w
 		}
-		i := add(topo(n, nodes, wpn, w), w, "measured")
-		if n == dce && recIsMeasured {
-			hi[i] = true
-		}
+		add(topo(n, nodes, wpn, w), w, "measured")
 	}
 	if ee != "" && eeW > 0 && eeW < Wp {
 		add(fmt.Sprintf("EE — 1 node, %d workers (single node · no HA)", Wp), Wp, "estimate")
 	}
-	altDone := false
 	for _, tot := range est {
 		nodes, wpn := byTotal[tot][0][0], byTotal[tot][0][1]
-		i := add(topo("DCE", nodes, wpn, tot), tot, "estimate")
-		if tot == recTotal {
-			hi[i] = true
-		}
-		if !altDone && len(byTotal[tot]) > 1 {
-			n2, w2 := byTotal[tot][1][0], byTotal[tot][1][1]
-			add(topo("DCE", n2, w2, tot), tot, "alt topology")
-			altDone = true
-		}
+		add(topo("DCE", nodes, wpn, tot), tot, "estimate")
 	}
 
 	// ---- render ----
@@ -201,15 +172,15 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	pdf.Ln(1)
 
 	colW := []float64{62, 26, 20, 45, 25}
-	drawTable(pdf, tr, colW, rows, hi, 8)
+	drawTable(pdf, tr, colW, rows, nil, 8)
 	pdf.Ln(1)
 	pdf.SetFont("Helvetica", "", 8.5)
 	setText(pdf, mut)
 	pdf.MultiCell(usableW, 4, tr("Measured rows are this run's actual configuration; estimates project the same measured "+
-		"per-analysis CE time onto other worker counts. Green = recommended sizing (keeps peak utilisation <= 70%). EE is "+
-		"a single node — bounded by one host, no HA — while DCE scales by adding nodes; the estimates show several "+
-		"node × workers/node combinations that reach the needed capacity. Estimates are linear (capacity = workers × 3600 "+
-		"/ CE-time); near or above 100% utilisation real queueing grows faster than shown."), "", "L", false)
+		"per-analysis CE time onto other worker counts. EE is a single node — bounded by one host, no HA — while DCE "+
+		"scales by adding nodes; the estimates show several node × workers/node combinations that reach the needed "+
+		"capacity. Estimates are linear (capacity = workers × 3600 / CE-time); near or above 100% utilisation real "+
+		"queueing grows faster than shown."), "", "L", false)
 	pdf.Ln(2)
 
 	// ---- model chart (measured lines only) ----
