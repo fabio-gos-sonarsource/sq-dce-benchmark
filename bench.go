@@ -225,8 +225,7 @@ func collect(t Target, ns string) Metrics {
 	var resp struct {
 		Tasks []ceTask `json:"tasks"`
 	}
-	r, err := get(t, "/api/ce/activity", url.Values{"q": {ns}, "ps": {"500"}, "status": {"SUCCESS,FAILED,CANCELED"}})
-	jsonInto(r, err, "ce/activity", &resp)
+	getJSON(t, "/api/ce/activity", url.Values{"q": {ns}, "ps": {"500"}, "status": {"SUCCESS,FAILED,CANCELED"}}, "ce/activity", &resp)
 	re := regexp.MustCompile("^" + regexp.QuoteMeta(ns) + `-\d+$`)
 	type row struct {
 		wait, proc float64
