@@ -1,54 +1,31 @@
-# Copy to bench.yaml and fill in.  bench.yaml is git-ignored (it holds tokens).
-#
-# One machine runs this. The heavy scan happens ONCE per target; the burst is
-# then N cheap re-submissions, so the Compute Engine — not the scanner — is the
-# bottleneck being measured.
-
-seed_repo: ./sample-project        # repo scanned ONCE per target. Use a REPRESENTATIVE
-                                   # repo for realistic CE task sizes (the bundled sample
-                                   # is tiny — fine only for a smoke test).
-n: 40                              # burst size: analyses fired at once
-concurrency: 12                    # parallel submissions
-# --- how the seed is scanned (once per target, then replayed) ---
-# Compatible languages: Java, JavaScript/TypeScript, Python, Go, PHP, Kotlin, Ruby,
-#   Scala, HTML/CSS, XML, YAML, IaC, and other source-analysed languages.
-# NOT supported: .NET (C#/VB.NET) — it needs the SonarScanner for .NET (begin/build/end).
-scan_mode: auto                    # auto | maven | gradle | cli
-#   auto detects: pom.xml -> maven ; build.gradle(.kts) -> gradle ; else -> cli
-#   Java projects use maven/gradle (they compile, so bytecode is available automatically).
-scanner_cli: sonar-scanner         # generic CLI (used for cli mode; on PATH or absolute)
-# maven: mvn                       # only if not on PATH
-# gradle: ./gradlew                # only if not on PATH
-# java_home: /path/to/jdk17        # JDK used to BUILD the seed (maven/gradle). Set this
-#                                  # when your project targets a JDK other than the default
-#                                  # `java` on PATH (e.g. Lombok/older projects need JDK 17/21).
-# build_args: "-P my-profile"      # extra args passed to maven/gradle. Use for a build
-#                                  # profile your project needs (e.g. a corporate mirror
-#                                  # profile) or module selection ("-pl backend -am").
-# scanner_props:                   # optional extra -D properties for the scan
-#   sonar.java.version: "17"
-namespace: ee_vs_dce_benchmark_test   # project-key prefix -> ee_vs_dce_benchmark_test-001, -002, …; used
-                                   # deleted afterwards (set keep_projects: true to keep them)
-report: ./sq-dce-benchmark-report.pdf
-results_file: ./results.json       # metrics are saved here; independent runs accumulate
-
-# Optional production model: extrapolates the measured CE time to a developer
-# population and adds a "feedback delay vs load" chart + capacity table to the PDF.
-# Uses the auto-detected workers/nodes per target. Omit this block to skip it.
-model:
-  devs: 5000                       # developer population to model
-  analyses_per_dev_day: 15         # analyses each dev triggers/day (PRs, branches, CI)
-  peak_fraction: 0.25              # share of daily analyses landing in the peak hour
-  # ce_seconds: 5.0                # optional; default = measured CE time from this run
-# keep_projects: false
-# exclusions: "**/node_modules/**,**/dist/**,**/*.min.js"
+# Copy this to bench.yaml and fill in your two SonarQube instances (admin token each).
+# Then run:  double-click run.command (macOS) / run.bat (Windows)  —  or:  ./sq-benchmark
+# bench.yaml is git-ignored (it holds tokens).
 
 targets:
   - name: EE
-    url: https://sonarqube-ee.example.com
+    url:   https://sonarqube-ee.example.com
     token: squ_xxxxxxxxxxxxxxxxxxxxxxxx
-  # workers: 6                    # OPTIONAL — auto-detected from the instance; set only to override the report label
   - name: DCE
-    url: https://sonarqube-dce.example.com
+    url:   https://sonarqube-dce.example.com
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
-  # workers: 12                   # OPTIONAL — auto-detected
+
+# --- optional (defaults shown; uncomment to change) --------------------------
+# sample: python          # bundled seed to replay: python (~32k ncloc) | java (~34k)
+# n: 40                   # analyses fired per target (burst size)
+# concurrency: 12         # parallel submissions during the burst
+# report: sq-ee-dce-benchmark.pdf
+
+# Benchmark YOUR OWN repo instead of a bundled sample.
+# (Only this mode needs a scanner: SonarScanner CLI, or JDK + Maven/Gradle for Java.
+#  .NET is not supported.)
+# seed_repo: /path/to/your/repo
+# scan_mode: auto         # auto | maven | gradle | cli
+# java_home: /path/to/jdk17   # if the project needs a specific JDK
+# build_args: "-P profile"    # extra mvn/gradle args (build profile / module selection)
+
+# Add a production-model projection (capacity + feedback-delay chart) to the report:
+# model:
+#   devs: 5000
+#   analyses_per_dev_day: 15
+#   peak_fraction: 0.25

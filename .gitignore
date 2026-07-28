@@ -10,11 +10,13 @@ target/
 build/
 .gradle/
 
-# python
-__pycache__/
-*.pyc
-.venv/
-venv/
+# go
+/dist/
+/sq-benchmark
+/sq-benchmark.exe
+
+# macOS
+.DS_Store
 
 # seed repos dropped into the folder must not be committed
 /juice-shop/

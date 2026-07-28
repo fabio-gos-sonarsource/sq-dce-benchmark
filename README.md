@@ -1,13 +1,58 @@
-# SonarQube EE vs DCE Analysis performance comparison
+# SonarQube EE vs DCE — Compute Engine throughput benchmark
 
 A one-command benchmark that compares **Compute Engine (CE) throughput** between a
 SonarQube **Enterprise Edition** node and a **Data Center Edition** cluster, and
-produces a PDF report — designed to show the impact of DCE on analysis feedback
+produces a PDF report, designed to show the impact of DCE on analysis feedback
 (queue behaviour) at scale.
+
+It ships as a **single static binary** with no dependencies to install, so it runs
+on locked-down machines that only allow a downloaded executable.
 
 > ⚠️ **Non-production benchmark.** It generates load by replaying SonarScanner's
 > internal report format via `api/ce/submit` (unsupported internals). Run it only
 > against **non-production** instances.
+
+## Get the binary
+
+Download the archive for your OS/architecture from the release and unzip it. Each
+archive holds the `sq-benchmark` binary, `bench.example.yaml`, and a double-click
+launcher (`run.command` on macOS, `run.bat` on Windows).
+
+| Platform | Archive |
+|---|---|
+| macOS (Apple Silicon / Intel) | `sq-benchmark_<ver>_darwin_arm64.zip` · `…_darwin_amd64.zip` |
+| Linux (arm64 / x86-64) | `…_linux_arm64.zip` · `…_linux_amd64.zip` |
+| Windows (x86-64 / arm64) | `…_windows_amd64.zip` · `…_windows_arm64.zip` |
+
+Or build from source (Go 1.24+):
+
+```bash
+go build -o sq-benchmark .
+```
+
+Maintainers cross-compile all platforms at once:
+
+```bash
+./build-release.sh v1.0.0        # -> dist/v1.0.0/*.zip
+```
+
+Verify it runs:
+
+```bash
+./sq-benchmark version
+```
+
+## What you need
+
+- The **`sq-benchmark` binary**.
+- A **SonarQube Enterprise Edition** and a **Data Center Edition** instance (2026.1+),
+  reachable from this machine.
+- An **admin token** for each instance: it needs create-project, execute-analysis and
+  **Administer System**.
+- **Only if you benchmark your own repo** (instead of a bundled sample): a scanner for
+  its language — the **SonarScanner CLI** for source-analysed languages, or
+  **Maven/Gradle + a JDK** for Java. The bundled samples are pre-scanned, so out of the
+  box you need none of this.
 
 ## Compatible languages
 
@@ -18,19 +63,19 @@ IaC, and other source-analysed languages.
 > (`begin` → build → `end`), which this tool does not drive. Point `seed_repo` at a
 > supported project instead.
 
-The seed is scanned with the right scanner automatically (`scan_mode: auto`):
+This applies when you benchmark **your own** repo. When you do, it's scanned with the
+right scanner automatically (`scan_mode: auto`) — the bundled samples come pre-scanned:
 
 | Project contains | Scanner used | You need |
 |---|---|---|
-| `pom.xml` | Maven — `mvn -DskipTests verify sonar:sonar` | **Maven + a JDK**, dependencies resolvable |
+| `pom.xml` | Maven — `mvn verify sonar:sonar` | **Maven + a JDK**, dependencies resolvable |
 | `build.gradle(.kts)` | Gradle — `gradlew build sonar` | **Gradle + a JDK**, and the **SonarQube Gradle plugin** applied in the build |
 | neither | CLI — `sonar-scanner` | the **SonarScanner CLI** |
 
-**Java note:** Java analysis needs compiled bytecode, so Maven/Gradle **build then scan** in
-one step — you don't set `sonar.java.binaries` manually. The project must **build on the
+**Java note:** Java analysis needs compiled bytecode, so Maven/Gradle **build then scan**
+in one step — you don't set `sonar.java.binaries` manually. The project must **build on the
 machine running the tool** (JDK + Maven/Gradle + resolvable dependencies/credentials).
-It's possible to force a mode with
-`scan_mode: maven | gradle | cli` if you do not want to use auto-detection.
+Force a mode with `scan_mode: maven | gradle | cli` if you don't want auto-detection.
 
 If your project targets a specific JDK (common with Lombok or older codebases), set
 `java_home:` in `bench.yaml` — the tool builds/scans the seed with that JDK
@@ -41,38 +86,45 @@ corporate Artifactory mirror profile, or building only some modules), pass it vi
 `build_args:` — the string is inserted into the `mvn`/`gradle` command, e.g.
 `build_args: "-P artifactory"` or `build_args: "-pl backend -am"`.
 
-## What you need (one machine)
-
-- **Python 3.9+** and the deps in `requirements.txt`
-- A scanner for your project's language (see the table above): **SonarScanner CLI** for
-  source-analysed languages, or **Maven/Gradle + a JDK** for Java
-- Network access to both instances
-- A SonarQube Server Enterprise Edition (2026.1+)
-- A SonarQube Server Data Center Edition (2026.1+)
-- An **admin token** for each instance (create-project + execute-analysis + admin)
+The seed scan streams the build output live and aborts if it stalls (default 30 min;
+tune with `scan_timeout:` in `bench.yaml`), so a long build never looks like a hang.
 
 ## Setup
 
 ```bash
-pip install -r requirements.txt
-cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, seed_repo, N
+cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, n
 ```
 
-Point `seed_repo` at a **representative repository** (the bundled `sample-project`
-is tiny — good only for a smoke test; a bigger repo gives realistic CE task sizes).
-For a quick Java check, point `seed_repo` at `sample-java` (a self-contained Maven
-project that builds offline) — it exercises the full `scan_mode: maven` path.
+**By default the benchmark replays a bundled, pre-scanned sample** — nothing to install,
+build, or clone. Choose which with:
+
+```yaml
+sample: python      # Rich, ~32k ncloc  (or:  java  -> Apache Commons Lang, ~34k ncloc)
+```
+
+To benchmark **your own** code instead, set `seed_repo` (this is the only mode that runs
+a scanner — see *Compatible languages* for the toolchain it needs):
+
+```yaml
+seed_repo: /path/to/your/repo
+```
 
 ## Run
 
+With `bench.yaml` next to the binary, just **double-click `run.command` (macOS) /
+`run.bat` (Windows)** — or from a terminal:
+
 ```bash
-python3 sq_bench.py run --config bench.yaml
+./sq-benchmark          # no arguments: runs using the nearest bench.yaml
 ```
 
-Per target it will: scan the seed once → validate one replay (fail fast if versions
-differ) → pre-create N projects → replay N in parallel while sampling the queue every
-second → collect `api/ce/activity` metrics → delete the bench projects. Then it writes
-the comparison **PDF** (`report:` path).
+(`--config <file>` is optional; it defaults to a `bench.yaml` in the current folder or
+next to the binary.)
+
+Per target it will: get the seed report (a bundled sample, or scan your `seed_repo`) →
+validate one replay (fail fast if versions differ) → pre-create N projects → replay N in
+parallel while sampling the queue every second → collect `api/ce/activity` metrics →
+delete the bench projects. Then it writes the comparison **PDF** (`report:` path).
 
 ### Run targets independently (recommended when EE and DCE share hardware)
 
@@ -80,15 +132,15 @@ If both instances aren't on separate hardware, run each **on its own** so they d
 compete for CPU — results accumulate into `results_file` and the report combines them:
 
 ```bash
-python3 sq_bench.py run    --config bench.yaml --only EE     # (DCE idle/stopped)
-python3 sq_bench.py run    --config bench.yaml --only DCE    # (EE idle/stopped)
-python3 sq_bench.py report --config bench.yaml               # combined PDF from results.json
+./sq-benchmark run    --only EE     # (DCE idle/stopped)
+./sq-benchmark run    --only DCE    # (EE idle/stopped)
+./sq-benchmark report               # combined PDF from results.json
 ```
 
 Clean up anytime (e.g. after an interrupted run):
 
 ```bash
-python3 sq_bench.py cleanup --config bench.yaml
+./sq-benchmark cleanup
 ```
 
 ## Example run & output
@@ -112,50 +164,6 @@ targets:
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
 ```
 
-Run each target while the other is idle so they don't compete for CPU:
-
-```text
-$ python3 sq_bench.py run --config bench.yaml --only DCE-12
-⚠  Non-production benchmark — replaying internal report format via api/ce/submit.
-
-=== DCE-12  (https://sonarqube-dce.acme.internal) ===
-  scanning seed once ...
-  detected CE workers: 12 (4/node × 3)
-  validating one replay ...
-  ✓ replay valid (ncloc=77774)
-  pre-creating 40 projects ...
-  staging 40 reports ...
-  firing burst (N=40, concurrency=12) ...
-  → 40/40 ok | drain 15s | wait avg 5.6s p95 11s | throughput 9600/hr
-
-$ python3 sq_bench.py run --config bench.yaml --only EE-6
-=== EE-6  (https://sonarqube-ee.acme.internal) ===
-  scanning seed once ...
-  detected CE workers: 6
-  validating one replay ...
-  ✓ replay valid (ncloc=77774)
-  ...
-  → 40/40 ok | drain 39s | wait avg 16.8s p95 31s | throughput 3692/hr
-
-Report written: ./acme-ee-vs-dce.pdf
-```
-
-The report contains a side-by-side table (illustrative numbers) plus a
-queue-size-over-time chart:
-
-| Metric — N=40 burst | EE | DCE |
-|---|---|---|
-| Workers (detected) | 6 | 12 (4/node × 3) |
-| Tasks OK | 40 | 40 |
-| Queue drain (s) | 39 | **15** |
-| Throughput (tasks/hr) | 3,692 | **9,600** |
-| Avg queue wait (s) | 16.8 | **5.6** |
-| p95 queue wait (s) | 31 | **11** |
-| CE time / task (s) | 5.0 | 3.4 |
-
-Lower is better on every row. Your numbers will vary with hardware, project size, `n`,
-and worker counts — run EE and DCE on **separate hardware** for a representative result.
-
 ## For a fair, meaningful result
 
 - **Same version** on both instances (the validator aborts if a replay fails).
@@ -173,8 +181,8 @@ and worker counts — run EE and DCE on **separate hardware** for a representati
 
 ## Output
 
-A PDF with a side-by-side metrics table (drain time, throughput, avg/p95 queue wait,
-CE time per task) and a **queue-size-over-time** chart.
+A compact PDF with a side-by-side metrics table (drain time, throughput, avg/p95
+queue wait, CE time per task) and a **queue-size-over-time** chart.
 
 ### Production model (optional)
 
@@ -191,22 +199,25 @@ model:
 ```
 
 It renders the assumptions (e.g. *5,000 devs × 15/day = 75,000/day; ~25% peak ≈ 18,750/hr*),
-a capacity/utilisation/feedback-delay table per configuration (including a DCE "headroom"
-row at more workers/node), and a chart showing where each configuration saturates as load
-rises. Change `devs` and re-run `report` to re-model instantly.
+a capacity/utilisation/feedback-delay table — the **measured** EE and DCE configs plus
+auto-generated **DCE sizing estimates** (several node × workers/node combinations) — and a
+chart showing where each configuration saturates as load rises. Change `devs` and re-run
+`report` to re-model instantly.
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `sq_bench.py` | the CLI (`run`, `cleanup`) |
+| `sq-benchmark` | the CLI binary (`run` / `cleanup` / `report` / `version`) |
+| `run.command` / `run.bat` | double-click launchers (macOS / Windows) |
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
-| `proto/` | SonarScanner report schema (compiled at runtime, protobuf-version-safe) |
-| `sample-project/` | tiny sample for a **cli** smoke test |
-| `sample-java/` | tiny self-contained Maven project for a **Java (maven)** smoke test (builds offline) |
+| `build-release.sh` | cross-compile the binaries for all platforms |
+| `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |
+| `seeds/` | bundled pre-scanned sample reports (`python` = Rich, `java` = Commons Lang) + their licences |
 
 ## Notes / attribution
 
-`proto/scanner_report.proto` and `proto/constants.proto` are SonarSource's
-open-source (LGPL) scanner-report schema, included so the tool can read/re-key
-reports. Compiled in-memory at runtime to match your installed `protobuf`.
+The scanner-report format this tool replays is SonarSource's open-source (LGPL)
+scanner-report schema. The binary re-keys only a few known fields at the protobuf **wire
+level** (via `google.golang.org/protobuf`), preserving all other fields — so no schema
+files are needed at runtime and it stays compatible across SonarQube versions.
