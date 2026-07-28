@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"sort"
 	"strings"
 
@@ -82,8 +81,7 @@ func generateReport(cfg *Config, results map[string]Metrics, names []string) {
 	pdf.CellFormat(usableW, 9, tr("SonarQube — Compute Engine throughput benchmark"), "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 9)
 	setText(pdf, mut)
-	seed := filepath.Base(strings.TrimRight(cfg.SeedRepo, "/"))
-	pdf.CellFormat(usableW, 5, tr(fmt.Sprintf("Burst of N=%d analyses · seed: %s · replay method", cfg.N, seed)), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 5, tr(fmt.Sprintf("Burst of N=%d analyses · seed: %s · replay method", cfg.N, cfg.seedLabel())), "", 1, "L", false, 0, "")
 	hr(pdf)
 
 	// ---- comparison table ----

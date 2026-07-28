@@ -303,8 +303,7 @@ func runTarget(t Target, cfg *Config) Metrics {
 	stage, _ := os.MkdirTemp("", "sqstage_"+t.Name+"_")
 	ns := cfg.Namespace
 	post(t, "/api/projects/bulk_delete", url.Values{"q": {ns}})
-	fmt.Println("  scanning seed once ...")
-	rep := produceSeedReport(t, cfg, work)
+	rep := seedReport(t, cfg, work)
 	profiles := fetchProfiles(t)
 
 	w := detectWorkers(t)

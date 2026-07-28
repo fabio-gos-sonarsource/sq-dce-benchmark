@@ -19,7 +19,7 @@ for p in "${PLATFORMS[@]}"; do
   GOOS="$os" GOARCH="$arch" CGO_ENABLED=0 \
     go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "$dir/$bin" .
   cp README.md bench.example.yaml "$dir/" 2>/dev/null || true
-  cp -r sample-project sample-java "$dir/" 2>/dev/null || true
+  # sample seeds are embedded in the binary — nothing else to bundle
   ( cd "$OUT" && zip -qr "$(basename "$dir").zip" "$(basename "$dir")" )
 done
 

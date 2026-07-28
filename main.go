@@ -35,7 +35,8 @@ type Model struct {
 
 // Config mirrors bench.yaml.
 type Config struct {
-	SeedRepo     string            `yaml:"seed_repo"`
+	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> use a bundled sample
+	Sample       string            `yaml:"sample"`    // which bundled sample when seed_repo is empty: python | java
 	N            int               `yaml:"n"`
 	Concurrency  int               `yaml:"concurrency"`
 	ScanMode     string            `yaml:"scan_mode"`
@@ -91,8 +92,8 @@ func loadConfig(path string) *Config {
 	if err := yaml.Unmarshal(b, &c); err != nil {
 		die("invalid YAML in %s: %v", path, err)
 	}
-	if len(c.Targets) == 0 || c.SeedRepo == "" || c.N == 0 || c.Namespace == "" {
-		die("config missing one of: targets, seed_repo, n, namespace")
+	if len(c.Targets) == 0 || c.N == 0 || c.Namespace == "" {
+		die("config missing one of: targets, n, namespace")
 	}
 	return &c
 }

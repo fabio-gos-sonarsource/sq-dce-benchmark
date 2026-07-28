@@ -4,9 +4,12 @@
 # then N cheap re-submissions, so the Compute Engine — not the scanner — is the
 # bottleneck being measured.
 
-seed_repo: ./sample-project        # repo scanned ONCE per target. Use a REPRESENTATIVE
-                                   # repo for realistic CE task sizes (the bundled sample
-                                   # is tiny — fine only for a smoke test).
+# SEED: what gets replayed. Leave seed_repo empty (default) to use a bundled,
+# pre-scanned sample — no scanner/JDK/Maven or build needed. Choose which with
+# `sample:`. Set seed_repo to your OWN repo to scan and benchmark that instead
+# (that is the only mode that needs a scanner toolchain).
+sample: python                     # bundled sample when seed_repo is empty: python (~32k ncloc) | java (~34k)
+# seed_repo: /path/to/your/repo    # your own representative repo (scanned once, then replayed)
 n: 40                              # burst size: analyses fired at once
 concurrency: 12                    # parallel submissions
 # --- how the seed is scanned (once per target, then replayed) ---

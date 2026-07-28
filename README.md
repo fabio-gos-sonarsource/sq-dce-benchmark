@@ -44,12 +44,14 @@ Verify it runs:
 ## What you need
 
 - The **`sq-dce-benchmark` binary**.
-- A scanner for your seed project's language (see *Compatible languages*): the
-  **SonarScanner CLI** for source-analysed languages, or **Maven/Gradle + a JDK** for Java.
 - A **SonarQube Enterprise Edition** and a **Data Center Edition** instance (2026.1+),
   reachable from this machine.
 - An **admin token** for each instance: it needs create-project, execute-analysis and
   **Administer System**.
+- **Only if you benchmark your own repo** (instead of a bundled sample): a scanner for
+  its language — the **SonarScanner CLI** for source-analysed languages, or
+  **Maven/Gradle + a JDK** for Java. The bundled samples are pre-scanned, so out of the
+  box you need none of this.
 
 ## Compatible languages
 
@@ -60,7 +62,8 @@ IaC, and other source-analysed languages.
 > (`begin` → build → `end`), which this tool does not drive. Point `seed_repo` at a
 > supported project instead.
 
-The seed is scanned with the right scanner automatically (`scan_mode: auto`):
+This applies when you benchmark **your own** repo. When you do, it's scanned with the
+right scanner automatically (`scan_mode: auto`) — the bundled samples come pre-scanned:
 
 | Project contains | Scanner used | You need |
 |---|---|---|
@@ -88,13 +91,22 @@ tune with `scan_timeout:` in `bench.yaml`), so a long build never looks like a h
 ## Setup
 
 ```bash
-cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, seed_repo, n
+cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, n
 ```
 
-Point `seed_repo` at a **representative repository** (the bundled `sample-project`
-is tiny — good only for a smoke test; a bigger repo gives realistic CE task sizes).
-For a quick Java check, point `seed_repo` at `sample-java` (a self-contained Maven
-project that builds offline) — it exercises the full `scan_mode: maven` path.
+**By default the benchmark replays a bundled, pre-scanned sample** — nothing to install,
+build, or clone. Choose which with:
+
+```yaml
+sample: python      # Rich, ~32k ncloc  (or:  java  -> Apache Commons Lang, ~34k ncloc)
+```
+
+To benchmark **your own** code instead, set `seed_repo` (this is the only mode that runs
+a scanner — see *Compatible languages* for the toolchain it needs):
+
+```yaml
+seed_repo: /path/to/your/repo
+```
 
 ## Run
 
@@ -193,8 +205,7 @@ load rises. Change `devs` and re-run `report` to re-model instantly.
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
 | `build-release.sh` | cross-compile the binaries for all platforms |
 | `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |
-| `sample-project/` | tiny sample for a **cli** smoke test |
-| `sample-java/` | tiny self-contained Maven project for a **Java (maven)** smoke test (builds offline) |
+| `seeds/` | bundled pre-scanned sample reports (`python` = Rich, `java` = Commons Lang) + their licences |
 
 ## Notes / attribution
 
