@@ -2,7 +2,7 @@
 
 A one-command benchmark that compares **Compute Engine (CE) throughput** between a
 SonarQube **Enterprise Edition** node and a **Data Center Edition** cluster, and
-produces a PDF report — designed to show the impact of DCE on analysis feedback
+produces a PDF report, designed to show the impact of DCE on analysis feedback
 (queue behaviour) at scale.
 
 It ships as a **single static binary** with no dependencies to install, so it runs
@@ -15,7 +15,7 @@ on locked-down machines that only allow a downloaded executable.
 ## Get the binary
 
 Download the archive for your OS/architecture from the release, unzip it, and run the
-`sq-dce-benchmark` binary inside — there is nothing else to install.
+`sq-dce-benchmark` binary inside.
 
 | Platform | Archive |
 |---|---|
@@ -43,13 +43,13 @@ Verify it runs:
 
 ## What you need
 
-- The **`sq-dce-benchmark` binary** (above) — nothing else to install.
+- The **`sq-dce-benchmark` binary**.
 - A scanner for your seed project's language (see *Compatible languages*): the
   **SonarScanner CLI** for source-analysed languages, or **Maven/Gradle + a JDK** for Java.
 - A **SonarQube Enterprise Edition** and a **Data Center Edition** instance (2026.1+),
   reachable from this machine.
-- An **admin token** for each instance — it needs create-project, execute-analysis and
-  **Administer System**; the tool checks this up front and fails fast with a clear message.
+- An **admin token** for each instance: it needs create-project, execute-analysis and
+  **Administer System**.
 
 ## Compatible languages
 
@@ -145,50 +145,6 @@ targets:
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
 ```
 
-Run each target while the other is idle so they don't compete for CPU:
-
-```text
-$ ./sq-dce-benchmark run --config bench.yaml --only DCE-12
-⚠  Non-production benchmark — replaying internal report format via api/ce/submit.
-
-=== DCE-12  (https://sonarqube-dce.acme.internal) ===
-  scanning seed once ...
-  detected CE workers: 12 (4/node × 3)
-  validating one replay ...
-  ✓ replay valid (ncloc=77774)
-  pre-creating 40 projects ...
-  staging 40 reports ...
-  firing burst (N=40, concurrency=12) ...
-  → 40/40 ok | drain 15s | wait avg 5.6s p95 11s | throughput 9600/hr
-
-$ ./sq-dce-benchmark run --config bench.yaml --only EE-6
-=== EE-6  (https://sonarqube-ee.acme.internal) ===
-  scanning seed once ...
-  detected CE workers: 6
-  validating one replay ...
-  ✓ replay valid (ncloc=77774)
-  ...
-  → 40/40 ok | drain 39s | wait avg 16.8s p95 31s | throughput 3692/hr
-
-Report written: ./acme-ee-vs-dce.pdf
-```
-
-The report contains a side-by-side table (illustrative numbers) plus a
-queue-size-over-time chart:
-
-| Metric — N=40 burst | EE | DCE |
-|---|---|---|
-| Workers (detected) | 6 | 12 (4/node × 3) |
-| Tasks OK | 40 | 40 |
-| Queue drain (s) | 39 | **15** |
-| Throughput (tasks/hr) | 3,692 | **9,600** |
-| Avg queue wait (s) | 16.8 | **5.6** |
-| p95 queue wait (s) | 31 | **11** |
-| CE time / task (s) | 5.0 | 3.4 |
-
-Lower is better on every row. Your numbers will vary with hardware, project size, `n`,
-and worker counts — run EE and DCE on **separate hardware** for a representative result.
-
 ## For a fair, meaningful result
 
 - **Same version** on both instances (the validator aborts if a replay fails).
@@ -206,7 +162,7 @@ and worker counts — run EE and DCE on **separate hardware** for a representati
 
 ## Output
 
-A compact vector PDF with a side-by-side metrics table (drain time, throughput, avg/p95
+A compact PDF with a side-by-side metrics table (drain time, throughput, avg/p95
 queue wait, CE time per task) and a **queue-size-over-time** chart.
 
 ### Production model (optional)
