@@ -6,6 +6,7 @@ import (
 	"embed"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -16,38 +17,76 @@ import (
 // JDK/Maven, or network build step — the tool replays the embedded report directly.
 // Generated against the oldest supported SonarQube (2026.1), so they replay on 2026.1+.
 //
-//go:embed seeds/python.zip seeds/java.zip
+//go:embed seeds/react.zip seeds/jackson.zip seeds/jackson-pr.zip
 var seedFS embed.FS
 
 // sampleInfo describes a bundled seed for the run banner / report label.
 type sampleInfo struct {
-	label string // human label, e.g. "Rich (Python, ~32k ncloc)"
-	zip   string // path within seedFS
+	label string // human label, e.g. "React (JavaScript, ~98k ncloc)"
+	zip   string // full-scan report within seedFS
+	prZip string // optional PR-sized report; when set the seed is a mixed workload
 }
 
 var samples = map[string]sampleInfo{
-	"python": {label: "Rich (Python, ~32k ncloc)", zip: "seeds/python.zip"},
-	"java":   {label: "Apache Commons Lang (Java, ~34k ncloc)", zip: "seeds/java.zip"},
+	"js":   {label: "React (JavaScript, ~98k ncloc)", zip: "seeds/react.zip"},
+	"java": {label: "jackson-databind (Java, ~76k ncloc)", zip: "seeds/jackson.zip"},
+	// mixed: mostly small PR-sized analyses with the occasional full scan — the realistic
+	// real-world traffic mix (see mixPRFraction for the ratio).
+	"mixed": {label: "jackson-databind mixed (Java, ~3.5k PR + ~76k full)", zip: "seeds/jackson.zip", prZip: "seeds/jackson-pr.zip"},
 }
 
-// materializeSample unzips a bundled seed's scanner-report into workdir and returns
-// the report directory (the one containing metadata.pb), ready for staging/replay.
-func materializeSample(name, workdir string) (string, sampleInfo) {
-	info, ok := samples[name]
-	if !ok {
-		die("unknown sample %q — use one of: python, java (or set seed_repo to your own repo)", name)
+// defaultSample is used when neither seed_repo nor sample is set.
+const defaultSample = "js"
+
+// mixPRFraction is the share of a mixed-seed burst that replays the small PR-sized
+// report (the rest replay the full scan). Reuses model.pr_fraction when set so the
+// measured mix and the production model agree; defaults to a realistic 0.8.
+func mixPRFraction(cfg *Config) float64 {
+	if cfg.Model != nil && cfg.Model.PRFraction > 0 && cfg.Model.PRFraction <= 1 {
+		return cfg.Model.PRFraction
 	}
-	data, err := seedFS.ReadFile(info.zip)
+	return 0.8
+}
+
+// replaySource holds the report directory (or directories) to replay during the burst.
+type replaySource struct {
+	full   string  // full/branch-analysis report dir (always set; contains metadata.pb)
+	pr     string  // PR-sized report dir ("" unless a mixed seed)
+	prFrac float64 // share of submissions that replay the PR report (0 unless mixed)
+}
+
+// pick chooses the report dir for submission i. For a mixed seed it interleaves ~prFrac
+// PR analyses with occasional full ones, evenly spread and deterministic (reproducible).
+func (r *replaySource) pick(i int) string {
+	if r.pr == "" || r.prFrac <= 0 {
+		return r.full
+	}
+	if r.prFrac >= 1 {
+		return r.pr
+	}
+	everyN := int(math.Round(1 / (1 - r.prFrac))) // e.g. prFrac 0.8 -> every 5th is a full scan
+	if everyN < 2 {
+		everyN = 2
+	}
+	if i%everyN == 0 {
+		return r.full
+	}
+	return r.pr
+}
+
+// unzipSeedZip extracts an embedded seed zip into dst (the report dir, with metadata.pb
+// at its root), guarding against zip-slip.
+func unzipSeedZip(zipRel, dst string) {
+	data, err := seedFS.ReadFile(zipRel)
 	if err != nil {
-		die("bundled sample %q is missing its report (%v) — rebuild the binary", name, err)
+		die("bundled seed %q is missing (%v) — rebuild the binary", zipRel, err)
 	}
-	dst := filepath.Join(workdir, "scanner-report")
 	if err := os.MkdirAll(dst, 0o755); err != nil {
-		die("cannot stage sample: %v", err)
+		die("cannot stage seed: %v", err)
 	}
 	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
-		die("bundled sample %q is corrupt (%v)", name, err)
+		die("bundled seed %q is corrupt (%v)", zipRel, err)
 	}
 	for _, f := range zr.File {
 		if f.FileInfo().IsDir() {
@@ -59,26 +98,25 @@ func materializeSample(name, workdir string) (string, sampleInfo) {
 		}
 		out := filepath.Join(dst, clean)
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
-			die("cannot stage sample: %v", err)
+			die("cannot stage seed: %v", err)
 		}
 		rc, err := f.Open()
 		if err != nil {
-			die("cannot read bundled sample entry %s: %v", f.Name, err)
+			die("cannot read seed entry %s: %v", f.Name, err)
 		}
 		w, err := os.Create(out)
 		if err != nil {
 			rc.Close()
-			die("cannot write sample file %s: %v", out, err)
+			die("cannot write seed file %s: %v", out, err)
 		}
 		if _, err := io.Copy(w, rc); err != nil {
 			w.Close()
 			rc.Close()
-			die("cannot extract sample file %s: %v", out, err)
+			die("cannot extract seed file %s: %v", out, err)
 		}
 		w.Close()
 		rc.Close()
 	}
-	return dst, info
 }
 
 // seedLabel is the seed name shown in the report subtitle.
@@ -88,27 +126,44 @@ func (c *Config) seedLabel() string {
 	}
 	name := c.Sample
 	if name == "" {
-		name = "python"
+		name = defaultSample
 	}
-	if info, ok := samples[name]; ok {
-		return info.label
+	info, ok := samples[name]
+	if !ok {
+		return name
 	}
-	return name
+	if info.prZip != "" { // mixed seed: spell out the PR/full split
+		prf := mixPRFraction(c)
+		return fmt.Sprintf("%s (%.0f%% PR + %.0f%% full)", info.label, prf*100, (1-prf)*100)
+	}
+	return info.label
 }
 
-// seedReport returns the report directory to replay: the customer's own scanned repo
-// when seed_repo is set, otherwise a bundled pre-scanned sample (no scanner needed).
-func seedReport(t Target, cfg *Config, workdir string) string {
+// seedReport returns the report(s) to replay: the customer's own scanned repo when
+// seed_repo is set, otherwise a bundled pre-scanned sample (no scanner needed). A mixed
+// sample returns both a full and a PR-sized report for the burst to interleave.
+func seedReport(t Target, cfg *Config, workdir string) *replaySource {
 	if cfg.SeedRepo != "" {
 		fmt.Println("  scanning seed once ...")
-		return produceSeedReport(t, cfg, workdir)
+		return &replaySource{full: produceSeedReport(t, cfg, workdir)}
 	}
 	name := cfg.Sample
 	if name == "" {
-		name = "python"
+		name = defaultSample
 	}
-	dir, info := materializeSample(name, workdir)
-	fmt.Printf("  using bundled pre-scanned sample: %s — no scanner needed\n", info.label)
+	info, ok := samples[name]
+	if !ok {
+		die("unknown sample %q — use one of: js, java, mixed (or set seed_repo to your own repo)", name)
+	}
+	full := filepath.Join(workdir, "full")
+	unzipSeedZip(info.zip, full)
+	rs := &replaySource{full: full}
+	if info.prZip != "" {
+		pr := filepath.Join(workdir, "pr")
+		unzipSeedZip(info.prZip, pr)
+		rs.pr, rs.prFrac = pr, mixPRFraction(cfg)
+	}
+	fmt.Printf("  using bundled pre-scanned sample: %s — no scanner needed\n", cfg.seedLabel())
 	fmt.Println("     (set seed_repo in bench.yaml to benchmark your own repository instead)")
-	return dir
+	return rs
 }

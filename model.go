@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 
 	"github.com/jung-kurt/gofpdf"
 )
@@ -41,7 +40,7 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		// blended PR/branch cost: real traffic is mostly cheap PR analyses
 		f := mdl.PRFraction
 		if f <= 0 || f > 1 {
-			f = 0.9
+			f = 0.8
 		}
 		T = f*mdl.PRCeSeconds + (1-f)*mdl.BranchCeSeconds
 		tSource = fmt.Sprintf("%.1fs/analysis blended (%.0f%% PRs @ %.1fs + %.0f%% branch @ %.1fs)",
@@ -138,62 +137,38 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	pdf.SetFont("Helvetica", "", 10)
 	setText(pdf, ink)
 	pdf.MultiCell(usableW, 5, tr(fmt.Sprintf(
-		"Assumptions: %s developers × %s analyses/day = %s/day; ~%.0f%% land in the peak hour ~ %s analyses/hr; "+
-			"%s. Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
-		commas(float64(devs)), trimF(apd), commas(daily), pf*100, commas(peak), tSource)), "", "L", false)
+		"Assumptions: %s developers × %s analyses/day = %s/day; ~%.0f%% in the peak hour ~ %s analyses/hr.",
+		commas(float64(devs)), trimF(apd), commas(daily), pf*100, commas(peak))), "", "L", false)
 	pdf.Ln(1)
 
-	// capacity-vs-peak verdict for a single EE node — the one honest decision number
+	// one bold verdict line: EE-vs-peak decision + the queue/no-queue consequence,
+	// merged so the same point isn't made twice.
 	if ee != "" && eeW > 0 {
 		eeCap := capf(float64(eeW))
+		// the DCE cluster row (multi-node, else the most-workers target) for the contrast
+		dce := ""
+		for _, n := range names {
+			if results[n].AppNodes > 1 && dce == "" {
+				dce = n
+			}
+		}
 		var verdict string
-		if peak <= eeCap {
-			verdict = fmt.Sprintf("A single EE node (%d workers) handles ~%s analyses/hr — above your ~%s/hr peak "+
-				"(~%.0f%% utilisation). At this scale one node keeps up, so DCE's value here is high availability and "+
-				"growth headroom rather than raw throughput.", eeW, commas(eeCap), commas(peak), peak/eeCap*100)
-		} else {
-			verdict = fmt.Sprintf("A single EE node (%d workers) handles ~%s analyses/hr, but your peak is ~%s/hr "+
-				"(~%.0f%% of one node) — one node can't sustain it, so its queue grows and feedback delay climbs. DCE "+
-				"adds nodes to close the gap.", eeW, commas(eeCap), commas(peak), peak/eeCap*100)
+		switch {
+		case peak <= eeCap:
+			verdict = fmt.Sprintf("At the ~%s/hr peak a single EE node (%d workers, ~%s/hr) stays under capacity — "+
+				"no queue forms, feedback is immediate. DCE's value here is high availability and headroom, not raw throughput.",
+				commas(peak), eeW, commas(eeCap))
+		case dce != "" && peak <= capf(float64(results[dce].Workers)):
+			verdict = fmt.Sprintf("At the ~%s/hr peak a single EE node (%d workers, ~%s/hr) is over capacity — its queue "+
+				"grows and feedback delay climbs; the DCE cluster (%d workers, ~%s/hr) stays under capacity, so no queue forms.",
+				commas(peak), eeW, commas(eeCap), results[dce].Workers, commas(capf(float64(results[dce].Workers))))
+		default:
+			verdict = fmt.Sprintf("At the ~%s/hr peak both EE and DCE are over capacity — queues grow on both. Size DCE "+
+				"with more nodes/workers until capacity clears the peak.", commas(peak))
 		}
 		pdf.SetFont("Helvetica", "B", 10)
-		pdf.MultiCell(usableW, 5, tr("Verdict: "+verdict), "", "L", false)
+		pdf.MultiCell(usableW, 5, tr(verdict), "", "L", false)
 		pdf.SetFont("Helvetica", "", 10)
-		pdf.Ln(1)
-	}
-
-	// under-capacity note: whenever a configuration stays below its capacity at the peak,
-	// no CE queue builds up — spell that out rather than just showing "no queue" in the table.
-	var under, over []string
-	for _, n := range names {
-		if peak <= capf(float64(results[n].Workers)) {
-			under = append(under, n)
-		} else {
-			over = append(over, n)
-		}
-	}
-	if len(under) > 0 {
-		join := func(s []string) string { return strings.Join(s, " and ") }
-		be := func(s []string) string {
-			if len(s) == 1 {
-				return "is"
-			}
-			return "are"
-		}
-		var msg string
-		if len(over) == 0 {
-			msg = fmt.Sprintf("No queue at this load: %s %s under capacity at the ~%s/hr peak, so the Compute Engine "+
-				"drains analyses as fast as they arrive — nothing waits in a queue and developer feedback is effectively "+
-				"immediate. A queue (and the feedback delays plotted below) only forms once the submission rate rises "+
-				"above a configuration's capacity.", join(under), be(under), commas(peak))
-		} else {
-			msg = fmt.Sprintf("At the ~%s/hr peak, %s %s under capacity, so no queue forms there and feedback stays "+
-				"immediate. %s %s over capacity, so a queue builds up and feedback delay climbs (see below).",
-				commas(peak), join(under), be(under), join(over), be(over))
-		}
-		pdf.SetFont("Helvetica", "", 10)
-		setText(pdf, ink)
-		pdf.MultiCell(usableW, 5, tr(msg), "", "L", false)
 		pdf.Ln(1)
 	}
 
@@ -202,10 +177,9 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	pdf.Ln(1)
 	pdf.SetFont("Helvetica", "", 8.5)
 	setText(pdf, mut)
-	pdf.MultiCell(usableW, 4, tr("Both rows are measured on this run's actual EE and DCE configurations. Peak capacity = "+
-		"detected workers × 3600 / measured CE-time; utilisation and feedback delay are computed against the modelled "+
-		"peak above. EE is a single node (bounded by one host, no HA); DCE scales throughput by adding nodes. Near or "+
-		"above 100% utilisation, real queueing grows faster than this linear model."), "", "L", false)
+	pdf.MultiCell(usableW, 4, tr(fmt.Sprintf("Measured EE and DCE configurations; %s. Capacity = workers × 3600 / CE-time. "+
+		"EE is one host (no HA); DCE scales by adding nodes. Above 100%% utilisation, real queueing grows faster than this "+
+		"linear model.", tSource)), "", "L", false)
 	pdf.Ln(2)
 
 	// ---- model chart (measured lines only) ----
@@ -282,13 +256,13 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	pdf.SetFont("Helvetica", "B", 8)
 	prevY := 1e9
 	for _, m := range marks {
-		ly := m.y - 2
+		ly := m.y - 3.5 // sit clear above the dot (and above the axis for the "no queue" point)
 		if prevY-ly < 4 {
 			ly = prevY - 4
 		}
 		prevY = ly
 		setText(pdf, m.c)
-		pdf.SetXY(p.px(peak)+2, ly)
+		pdf.SetXY(p.px(peak)+3, ly)
 		pdf.CellFormat(22, 4, tr(m.txt), "", 0, "L", false, 0, "")
 	}
 

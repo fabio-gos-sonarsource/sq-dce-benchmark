@@ -99,8 +99,15 @@ cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, n
 build, or clone. Choose which with:
 
 ```yaml
-sample: python      # Rich, ~32k ncloc  (or:  java  -> Apache Commons Lang, ~34k ncloc)
+sample: js          # React, ~98k ncloc  (or:  java  -> jackson-databind, ~76k ncloc)
 ```
+
+For a **realistic workload**, use `sample: mixed` — the burst replays a mix of mostly
+small PR-sized analyses (~3.5k ncloc) with the occasional full scan (~76k ncloc),
+defaulting to 80% PRs. This mirrors real traffic (cheap PR analyses dominate; full
+branch scans are rarer), so the measured throughput — and the production model's blended
+CE time — reflect how the instances behave in production rather than "every analysis is a
+full scan". Change the ratio with `model.pr_fraction`.
 
 To benchmark **your own** code instead, set `seed_repo` (this is the only mode that runs
 a scanner — see *Compatible languages* for the toolchain it needs):
@@ -231,7 +238,7 @@ model:
   devs: 5000
   analyses_per_dev_day: 15
   peak_fraction: 0.25
-  pr_fraction: 0.9        # 90% of analyses are PRs …
+  pr_fraction: 0.8        # 80% of analyses are PRs …
   pr_ce_seconds: 0.5      # … at ~0.5s CE each
   branch_ce_seconds: 8    # full branch analyses at ~8s
 ```
@@ -249,7 +256,7 @@ manufacturing a throughput gap.
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
 | `build-release.sh` | cross-compile the binaries for all platforms |
 | `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |
-| `seeds/` | bundled pre-scanned sample reports (`python` = Rich, `java` = Commons Lang) + their licences |
+| `seeds/` | bundled pre-scanned sample reports (`js` = React, `java` = jackson-databind, `mixed` = PR + full replay) + their licences |
 
 ## Notes / attribution
 
