@@ -7,7 +7,7 @@ These are **pre-generated SonarScanner reports** replayed by the benchmark when
 |---|---|---|---|
 | `js` | [React](https://github.com/facebook/react) | MIT (`react.LICENSE`) | ~98k |
 | `java` | [jackson-databind](https://github.com/FasterXML/jackson-databind) | Apache-2.0 (`jackson.LICENSE`) | ~76k |
-| `mixed` | jackson-databind: `jackson.zip` (full ~76k) + `jackson-pr.zip` (one package, ~3.5k) | Apache-2.0 (`jackson.LICENSE`) | mix |
+| `mixed` **(default)** | jackson-databind: `jackson.zip` (full ~76k) + `jackson-pr.zip` (one package, ~3.5k) | Apache-2.0 (`jackson.LICENSE`) | mix |
 
 `*.zip` hold each project's `scanner-report/` (which embeds the project source), generated
 against SonarQube 2026.1. Regenerate by scanning the project with `sonar.scanner.keepReport=true`

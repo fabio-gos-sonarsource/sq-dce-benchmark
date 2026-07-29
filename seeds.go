@@ -35,8 +35,9 @@ var samples = map[string]sampleInfo{
 	"mixed": {label: "jackson-databind mixed (Java, ~3.5k PR + ~76k full)", zip: "seeds/jackson.zip", prZip: "seeds/jackson-pr.zip"},
 }
 
-// defaultSample is used when neither seed_repo nor sample is set.
-const defaultSample = "js"
+// defaultSample is used when neither seed_repo nor sample is set. The realistic
+// PR + full mix is the default so a bare run reflects real-world traffic.
+const defaultSample = "mixed"
 
 // mixPRFraction is the share of a mixed-seed burst that replays the small PR-sized
 // report (the rest replay the full scan). Reuses model.pr_fraction when set so the

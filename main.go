@@ -68,8 +68,14 @@ type Config struct {
 	KeepProjects bool              `yaml:"keep_projects"`
 	ScanTimeout  int               `yaml:"scan_timeout"`
 	Load         *LoadSpec         `yaml:"load"`
-	Model        *Model            `yaml:"model"`
-	Targets      []Target          `yaml:"targets"`
+	// Production-model sizing — top-level one-liners for the common knobs (the model
+	// always renders in the report). To size for your org, just set `devs:`. The other
+	// two are optional; `model:` below holds only the advanced PR/branch CE-time blend.
+	Devs              int     `yaml:"devs"`
+	AnalysesPerDevDay float64 `yaml:"analyses_per_dev_day"`
+	PeakFraction      float64 `yaml:"peak_fraction"`
+	Model             *Model  `yaml:"model"`
+	Targets           []Target `yaml:"targets"`
 }
 
 func (c *Config) concurrency() int {
@@ -142,7 +148,7 @@ func loadConfig(path string) *Config {
 		c.Namespace = "sq_ee_dce_benchmark"
 	}
 	if c.Sample == "" {
-		c.Sample = "js"
+		c.Sample = "mixed"
 	}
 	return &c
 }
