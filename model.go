@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strings"
 
 	"github.com/jung-kurt/gofpdf"
 )
@@ -77,15 +78,15 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	}
 	delayCell := func(w int) string {
 		c := capf(float64(w))
-		d := dmin(peak, float64(w))
-		mx := 0.0
-		if peak > c {
-			mx = (peak - c) / c * 60
+		if peak <= c {
+			return "no queue" // under capacity: analyses are picked up as fast as they arrive
 		}
+		d := dmin(peak, float64(w))
+		mx := (peak - c) / c * 60
 		if d >= 1 {
 			return fmt.Sprintf("~%.0f min (max ~%.0f min)", d, mx)
 		}
-		return "< 1 s"
+		return "< 1 min"
 	}
 	topo := func(name string, nodes, wpn, w int) string {
 		if nodes <= 1 {
@@ -161,6 +162,41 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		pdf.Ln(1)
 	}
 
+	// under-capacity note: whenever a configuration stays below its capacity at the peak,
+	// no CE queue builds up — spell that out rather than just showing "no queue" in the table.
+	var under, over []string
+	for _, n := range names {
+		if peak <= capf(float64(results[n].Workers)) {
+			under = append(under, n)
+		} else {
+			over = append(over, n)
+		}
+	}
+	if len(under) > 0 {
+		join := func(s []string) string { return strings.Join(s, " and ") }
+		be := func(s []string) string {
+			if len(s) == 1 {
+				return "is"
+			}
+			return "are"
+		}
+		var msg string
+		if len(over) == 0 {
+			msg = fmt.Sprintf("No queue at this load: %s %s under capacity at the ~%s/hr peak, so the Compute Engine "+
+				"drains analyses as fast as they arrive — nothing waits in a queue and developer feedback is effectively "+
+				"immediate. A queue (and the feedback delays plotted below) only forms once the submission rate rises "+
+				"above a configuration's capacity.", join(under), be(under), commas(peak))
+		} else {
+			msg = fmt.Sprintf("At the ~%s/hr peak, %s %s under capacity, so no queue forms there and feedback stays "+
+				"immediate. %s %s over capacity, so a queue builds up and feedback delay climbs (see below).",
+				commas(peak), join(under), be(under), join(over), be(over))
+		}
+		pdf.SetFont("Helvetica", "", 10)
+		setText(pdf, ink)
+		pdf.MultiCell(usableW, 5, tr(msg), "", "L", false)
+		pdf.Ln(1)
+	}
+
 	colW := []float64{70, 30, 25, 53}
 	drawTable(pdf, tr, colW, rows, nil, 8)
 	pdf.Ln(1)
@@ -231,9 +267,13 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		}
 		d := dmin(peak, w)
 		p.dot(peak, d, cols[n])
-		txt := "< 1 min"
-		if d >= 1 {
-			txt = fmt.Sprintf("~%.0f min", d)
+		txt := "no queue"
+		if peak > capf(w) {
+			if d >= 1 {
+				txt = fmt.Sprintf("~%.0f min", d)
+			} else {
+				txt = "< 1 min"
+			}
 		}
 		marks = append(marks, peakMark{y: p.py(d), txt: txt, c: cols[n]})
 	}
