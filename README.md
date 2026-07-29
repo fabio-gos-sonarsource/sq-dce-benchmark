@@ -143,6 +143,24 @@ Clean up anytime (e.g. after an interrupted run):
 ./sq-benchmark cleanup
 ```
 
+### Sustained load (vs a one-shot burst)
+
+A one-shot burst of `n` only shows how fast a queue *drains*. To show whether an
+instance **keeps up with a steady stream** — the regime where a single EE node
+saturates (queue climbs and never recovers) while a bigger DCE cluster stays flat —
+add a `load:` block and the tool submits at a fixed rate for a set duration instead:
+
+```yaml
+load:
+  rate_per_min: 300     # analyses per minute
+  duration_sec: 300     # for how long
+```
+
+Run the **same rate** against EE and DCE: if the queue-over-time line climbs on EE
+but stays near zero on DCE, that's a real, measured throughput gap. It only appears
+when the rate exceeds one node's capacity, so use a light (PR-sized) seed and give the
+DCE cluster its own hardware — otherwise both just share the same cores.
+
 ## Example run & output
 
 A filled-in `bench.yaml` (tokens redacted):
@@ -198,11 +216,29 @@ model:
   peak_fraction: 0.25       # share landing in the peak hour
 ```
 
-It renders the assumptions (e.g. *5,000 devs × 15/day = 75,000/day; ~25% peak ≈ 18,750/hr*),
-a capacity/utilisation/feedback-delay table — the **measured** EE and DCE configs plus
-auto-generated **DCE sizing estimates** (several node × workers/node combinations) — and a
+It renders the assumptions, a plain-language **verdict** (*"a single EE node handles
+~X/hr — above/below your ~Y/hr peak"*), a capacity/utilisation/feedback-delay table —
+the **measured** EE and DCE configs plus auto-generated **DCE sizing estimates** — and a
 chart showing where each configuration saturates as load rises. Change `devs` and re-run
 `report` to re-model instantly.
+
+**PR/branch mix.** Real traffic is mostly cheap PR analyses (sized to the changeset)
+plus some full branch analyses. A single measured CE time (from a full scan of the seed)
+therefore *over*-estimates the average cost. Give both and the model blends them:
+
+```yaml
+model:
+  devs: 5000
+  analyses_per_dev_day: 15
+  peak_fraction: 0.25
+  pr_fraction: 0.9        # 90% of analyses are PRs …
+  pr_ce_seconds: 0.5      # … at ~0.5s CE each
+  branch_ce_seconds: 8    # full branch analyses at ~8s
+```
+
+This makes the capacity verdict honest: if the customer's realistic peak fits one EE
+node, the report says so (and points at HA/growth as the DCE value) rather than
+manufacturing a throughput gap.
 
 ## Files
 

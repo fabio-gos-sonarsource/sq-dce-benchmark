@@ -16,19 +16,31 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	devs := mdl.Devs
 	apd := mdl.AnalysesPerDevDay
 	if apd == 0 {
-		apd = 8
+		apd = 15 // default assumption; override with the customer's real figure
 	}
 	pf := mdl.PeakFraction
 	if pf == 0 {
-		pf = 0.15
+		pf = 0.25 // share of a day's analyses in the busiest hour; override with real data
 	}
 	daily := float64(devs) * apd
 	peak := daily * pf
 
 	var T float64
-	if mdl.CeSeconds > 0 {
+	var tSource string
+	switch {
+	case mdl.CeSeconds > 0:
 		T = mdl.CeSeconds
-	} else {
+		tSource = fmt.Sprintf("%.1fs/analysis (configured)", T)
+	case mdl.PRCeSeconds > 0 && mdl.BranchCeSeconds > 0:
+		// blended PR/branch cost: real traffic is mostly cheap PR analyses
+		f := mdl.PRFraction
+		if f <= 0 || f > 1 {
+			f = 0.9
+		}
+		T = f*mdl.PRCeSeconds + (1-f)*mdl.BranchCeSeconds
+		tSource = fmt.Sprintf("%.1fs/analysis blended (%.0f%% PRs @ %.1fs + %.0f%% branch @ %.1fs)",
+			T, f*100, mdl.PRCeSeconds, (1-f)*100, mdl.BranchCeSeconds)
+	default:
 		base := names[0]
 		for _, n := range names {
 			if results[n].Workers < results[base].Workers {
@@ -39,6 +51,7 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		if T == 0 {
 			T = 5.0
 		}
+		tSource = fmt.Sprintf("%.1fs/analysis (measured this run)", T)
 	}
 	c1 := 3600.0 / T
 	capf := func(w float64) float64 { return w * c1 }
@@ -166,10 +179,28 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	setText(pdf, ink)
 	pdf.MultiCell(usableW, 5, tr(fmt.Sprintf(
 		"Assumptions: %s developers × %s analyses/day = %s/day; ~%.0f%% land in the peak hour ~ %s analyses/hr; "+
-			"measured %.1fs/analysis (from this run). Capacity = workers × 3600 / CE-time; feedback delay is ~0 below "+
-			"capacity and grows once load exceeds it.",
-		commas(float64(devs)), trimF(apd), commas(daily), pf*100, commas(peak), T)), "", "L", false)
+			"%s. Capacity = workers × 3600 / CE-time; feedback delay is ~0 below capacity and grows once load exceeds it.",
+		commas(float64(devs)), trimF(apd), commas(daily), pf*100, commas(peak), tSource)), "", "L", false)
 	pdf.Ln(1)
+
+	// capacity-vs-peak verdict for a single EE node — the one honest decision number
+	if ee != "" && eeW > 0 {
+		eeCap := capf(float64(eeW))
+		var verdict string
+		if peak <= eeCap {
+			verdict = fmt.Sprintf("A single EE node (%d workers) handles ~%s analyses/hr — above your ~%s/hr peak "+
+				"(~%.0f%% utilisation). At this scale one node keeps up, so DCE's value here is high availability and "+
+				"growth headroom rather than raw throughput.", eeW, commas(eeCap), commas(peak), peak/eeCap*100)
+		} else {
+			verdict = fmt.Sprintf("A single EE node (%d workers) handles ~%s analyses/hr, but your peak is ~%s/hr "+
+				"(~%.0f%% of one node) — one node can't sustain it, so its queue grows and feedback delay climbs. DCE "+
+				"adds nodes to close the gap.", eeW, commas(eeCap), commas(peak), peak/eeCap*100)
+		}
+		pdf.SetFont("Helvetica", "B", 10)
+		pdf.MultiCell(usableW, 5, tr("Verdict: "+verdict), "", "L", false)
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.Ln(1)
+	}
 
 	colW := []float64{62, 26, 20, 45, 25}
 	drawTable(pdf, tr, colW, rows, nil, 8)

@@ -24,8 +24,22 @@ targets:
 # java_home: /path/to/jdk17   # if the project needs a specific JDK
 # build_args: "-P profile"    # extra mvn/gradle args (build profile / module selection)
 
-# Add a production-model projection (capacity + feedback-delay chart) to the report:
+# Sustained load instead of a one-shot burst: submit at a steady rate for a while.
+# This is the regime where a single EE node saturates (queue grows) while a bigger DCE
+# cluster keeps up (queue stays flat). Use a light (PR-sized) seed and adequate hardware.
+# load:
+#   rate_per_min: 300     # analyses submitted per minute
+#   duration_sec: 300     # for how long
+
+# Add a production-model projection (capacity + feedback-delay chart + a plain
+# "does one EE node keep up at your peak?" verdict) to the report:
 # model:
 #   devs: 5000
 #   analyses_per_dev_day: 15
 #   peak_fraction: 0.25
+#   # Optional PR/branch mix — real traffic is mostly cheap PR analyses (changeset-sized)
+#   # plus some full branch analyses. Give both CE times to model a realistic blend
+#   # instead of the single measured value:
+#   # pr_fraction: 0.9        # share that are PRs
+#   # pr_ce_seconds: 0.5      # CE time for a typical PR analysis
+#   # branch_ce_seconds: 8    # CE time for a full/branch analysis

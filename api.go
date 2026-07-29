@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -12,7 +11,20 @@ import (
 	"time"
 )
 
-var httpClient = &http.Client{}
+// The timeout lives on the http.Client (not a per-call context), so it spans the
+// whole exchange INCLUDING reading the response body. A context cancelled when the
+// request helper returns would kill the body read for any response not already
+// buffered — which showed up as "context canceled" on large api/ce/activity replies.
+// All clients share one transport for connection pooling.
+var sharedTransport = http.DefaultTransport
+
+func newClient(d time.Duration) *http.Client { return &http.Client{Timeout: d, Transport: sharedTransport} }
+
+var (
+	getClient    = newClient(30 * time.Second)
+	postClient   = newClient(60 * time.Second)
+	submitClient = newClient(180 * time.Second)
+)
 
 const maxBody = 16 << 20 // 16 MiB — headroom for large api/ce/activity responses
 
@@ -26,8 +38,8 @@ func snippet(b []byte) string {
 
 // newRequest builds a request with basic-token auth and the headers that keep
 // ngrok / proxies from returning an HTML interstitial instead of JSON.
-func newRequest(ctx context.Context, method, u, token string, body io.Reader) *http.Request {
-	req, _ := http.NewRequestWithContext(ctx, method, u, body)
+func newRequest(method, u, token string, body io.Reader) *http.Request {
+	req, _ := http.NewRequest(method, u, body)
 	req.SetBasicAuth(token, "")
 	req.Header.Set("ngrok-skip-browser-warning", "true")
 	req.Header.Set("User-Agent", "sq-benchmark/1.0")
@@ -43,39 +55,11 @@ func targetURL(t Target, path string, q url.Values) string {
 }
 
 func get(t Target, path string, q url.Values) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	return httpClient.Do(newRequest(ctx, "GET", targetURL(t, path, q), t.Token, nil))
+	return getClient.Do(newRequest("GET", targetURL(t, path, q), t.Token, nil))
 }
 
 func post(t Target, path string, q url.Values) (*http.Response, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	return httpClient.Do(newRequest(ctx, "POST", targetURL(t, path, q), t.Token, nil))
-}
-
-// jsonInto validates the response is a 2xx JSON body and decodes it, or exits
-// with an actionable message when a response isn't JSON.
-func jsonInto(r *http.Response, err error, what string, v any) {
-	if err != nil {
-		die("[%s] request failed: %v", what, err)
-	}
-	defer r.Body.Close()
-	body, _ := io.ReadAll(io.LimitReader(r.Body, maxBody))
-	ct := r.Header.Get("Content-Type")
-	if r.StatusCode >= 400 || !strings.Contains(strings.ToLower(ct), "json") {
-		hint := "\n  -> Check the instance URL is reachable and returns the SonarQube API (not a proxy page)."
-		if strings.Contains(r.Request.URL.Host, "ngrok") {
-			hint = "\n  -> This is an ngrok tunnel; an HTML body is usually ngrok's browser-warning/error page. Confirm the tunnel is up and the token is valid."
-		} else if r.StatusCode == 401 || r.StatusCode == 403 {
-			hint = fmt.Sprintf("\n  -> HTTP %d: the token needs admin (create-project + execute-analysis).", r.StatusCode)
-		}
-		die("[%s] expected JSON from %s but got HTTP %d (%s). First bytes: %q%s",
-			what, r.Request.URL, r.StatusCode, ct, snippet(body), hint)
-	}
-	if err := json.Unmarshal(body, v); err != nil {
-		die("[%s] invalid JSON from %s: %v", what, r.Request.URL, err)
-	}
+	return postClient.Do(newRequest("POST", targetURL(t, path, q), t.Token, nil))
 }
 
 // getJSON does a GET and decodes JSON into v, RETRYING transient failures
@@ -126,11 +110,9 @@ func validateToken(t Target) {
 	var v struct {
 		Valid bool `json:"valid"`
 	}
-	r, err := get(t, "/api/authentication/validate", nil)
-	if err != nil {
-		die("[%s] cannot reach %s (%v). Check the URL is correct and the instance is up and reachable from here.", t.Name, t.URL, err)
-	}
-	jsonInto(r, nil, "authentication/validate", &v)
+	// getJSON retries transient tunnel/LB blips (empty/truncated bodies, 5xx) so the
+	// preflight doesn't abort the whole run on a single hiccup.
+	getJSON(t, "/api/authentication/validate", nil, "authentication/validate", &v)
 	if !v.Valid {
 		die("[%s] token is INVALID for %s — check the target's token in bench.yaml (right instance? revoked/expired?).", t.Name, t.URL)
 	}
@@ -139,8 +121,7 @@ func validateToken(t Target) {
 			Global []string `json:"global"`
 		} `json:"permissions"`
 	}
-	rr, err := get(t, "/api/users/current", nil)
-	jsonInto(rr, err, "users/current", &cur)
+	getJSON(t, "/api/users/current", nil, "users/current", &cur)
 	for _, p := range cur.Permissions.Global {
 		if p == "admin" {
 			return
