@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"math"
-	"sort"
 
 	"github.com/jung-kurt/gofpdf"
 )
@@ -15,18 +14,11 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	if mdl == nil {
 		mdl = &Model{}
 	}
-	devs := mdl.Devs
-	if devs <= 0 {
-		devs = 5000 // default developer population; set model.devs to the customer's real count
-	}
-	apd := mdl.AnalysesPerDevDay
-	if apd == 0 {
-		apd = 15 // default assumption; override with the customer's real figure
-	}
-	pf := mdl.PeakFraction
-	if pf == 0 {
-		pf = 0.25 // share of a day's analyses in the busiest hour; override with real data
-	}
+	// Sizing knobs: prefer the top-level shortcuts (devs / analyses_per_dev_day /
+	// peak_fraction), fall back to a legacy model: block, then to sensible defaults.
+	devs := firstPosInt(cfg.Devs, mdl.Devs, 5000)
+	apd := firstPosF(cfg.AnalysesPerDevDay, mdl.AnalysesPerDevDay, 15)
+	pf := firstPosF(cfg.PeakFraction, mdl.PeakFraction, 0.25)
 	daily := float64(devs) * apd
 	peak := daily * pf
 
@@ -226,50 +218,63 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	pdf.SetXY(p.px(peak)-24, p.y+2)
 	pdf.CellFormat(22, 4, tr(fmt.Sprintf("%s-dev peak", commas(float64(devs)))), "", 0, "R", false, 0, "")
 
-	// annotate each edition's feedback delay AT the peak, so the reader can read the
-	// exact minutes EE and DCE would wait at this load (a dot on the curve + a label).
-	type peakMark struct {
-		y   float64
-		txt string
-		c   [3]int
-	}
-	var marks []peakMark
+	// Mark each edition's feedback delay AT the peak with a dot on its curve, and read
+	// the values off in a small callout in the (empty) top-left corner. Labels next to
+	// the dots would collide with the rising lines and the peak marker; both trend lines
+	// pass through that mid-region, so there's no clear spot there.
 	for _, n := range names {
 		w := float64(results[n].Workers)
 		if w == 0 {
 			w = 1
 		}
-		d := dmin(peak, w)
-		p.dot(peak, d, cols[n])
+		p.dot(peak, dmin(peak, w), cols[n])
+	}
+	pdf.SetFont("Helvetica", "", 8)
+	setText(pdf, mut)
+	pdf.SetXY(p.x+3, p.y+2)
+	pdf.CellFormat(60, 4, tr(fmt.Sprintf("At the ~%s/hr peak:", commas(peak))), "", 0, "L", false, 0, "")
+	pdf.SetFont("Helvetica", "B", 8)
+	for row, n := range names {
+		w := float64(results[n].Workers)
+		if w == 0 {
+			w = 1
+		}
 		txt := "no queue"
-		if peak > capf(w) {
+		if d := dmin(peak, w); peak > capf(w) {
 			if d >= 1 {
 				txt = fmt.Sprintf("~%.0f min", d)
 			} else {
 				txt = "< 1 min"
 			}
 		}
-		marks = append(marks, peakMark{y: p.py(d), txt: txt, c: cols[n]})
-	}
-	// draw bottom-most first and push overlapping labels upward so both stay legible
-	sort.Slice(marks, func(i, j int) bool { return marks[i].y > marks[j].y })
-	pdf.SetFont("Helvetica", "B", 8)
-	prevY := 1e9
-	for _, m := range marks {
-		ly := m.y - 3.5 // sit clear above the dot (and above the axis for the "no queue" point)
-		if prevY-ly < 4 {
-			ly = prevY - 4
-		}
-		prevY = ly
-		setText(pdf, m.c)
-		pdf.SetXY(p.px(peak)+3, ly)
-		pdf.CellFormat(22, 4, tr(m.txt), "", 0, "L", false, 0, "")
+		setText(pdf, cols[n])
+		pdf.SetXY(p.x+3, p.y+2+float64(row+1)*4)
+		pdf.CellFormat(60, 4, tr(fmt.Sprintf("%s  %s", n, txt)), "", 0, "L", false, 0, "")
 	}
 
 	p.legend(tr, labels, lcols)
 	pdf.SetY(p.y + p.h + 12)
 
 	_ = gofpdf.PointType{}
+}
+
+// firstPosInt / firstPosF return the first positive value (last arg is the default).
+func firstPosInt(vals ...int) int {
+	for _, v := range vals {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
+}
+
+func firstPosF(vals ...float64) float64 {
+	for _, v := range vals {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
 }
 
 // trimF prints a float without a trailing .0 for whole numbers (e.g. 15 not 15.0).

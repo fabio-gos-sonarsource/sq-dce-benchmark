@@ -31,15 +31,17 @@ targets:
 #   rate_per_min: 300     # analyses submitted per minute
 #   duration_sec: 300     # for how long
 
-# Add a production-model projection (capacity + feedback-delay chart + a plain
-# "does one EE node keep up at your peak?" verdict) to the report:
+# --- Production model ------------------------------------------------------
+# The report ALWAYS includes the model (capacity + feedback-delay chart + a plain
+# "does one EE node keep up at your peak?" verdict). To size it for your org, the
+# only knob most people change is the developer count — just set it here:
+devs: 5000
+# analyses_per_dev_day: 15   # optional (default 15)
+# peak_fraction: 0.25        # optional — share of the day's analyses in the busiest hour (default 0.25)
+#
+# Advanced: model a realistic PR/branch CE-time blend instead of the single measured
+# value (real traffic is mostly cheap PR analyses plus some full branch analyses):
 # model:
-#   devs: 5000
-#   analyses_per_dev_day: 15
-#   peak_fraction: 0.25
-#   # Optional PR/branch mix — real traffic is mostly cheap PR analyses (changeset-sized)
-#   # plus some full branch analyses. Give both CE times to model a realistic blend
-#   # instead of the single measured value:
-#   # pr_fraction: 0.8        # share that are PRs (also sets the mixed-seed split)
-#   # pr_ce_seconds: 0.5      # CE time for a typical PR analysis
-#   # branch_ce_seconds: 8    # CE time for a full/branch analysis
+#   pr_fraction: 0.8         # share that are PRs (also sets the mixed-seed split)
+#   pr_ce_seconds: 0.5       # CE time for a typical PR analysis
+#   branch_ce_seconds: 8     # CE time for a full/branch analysis

@@ -214,13 +214,13 @@ queue wait, CE time per task) and a **queue-size-over-time** chart.
 If you add a `model:` block to `bench.yaml`, the report also includes a **production
 model**: it takes the *measured* CE time per analysis and each target's *auto-detected*
 workers/nodes, and projects the **average feedback delay vs. load** for a developer
-population you choose:
+population you choose. The model **always renders** (with sensible defaults); to size it
+for your org the usual knob is a single top-level line:
 
 ```yaml
-model:
-  devs: 5000                # developer population
-  analyses_per_dev_day: 15  # PRs, branches, CI per dev/day
-  peak_fraction: 0.25       # share landing in the peak hour
+devs: 5000                  # developer population — the one knob most people set
+# analyses_per_dev_day: 15  # optional (default 15)
+# peak_fraction: 0.25       # optional — share landing in the peak hour (default 0.25)
 ```
 
 It renders the assumptions, a plain-language **verdict** (*"a single EE node handles
@@ -231,13 +231,11 @@ chart showing where each configuration saturates as load rises. Change `devs` an
 
 **PR/branch mix.** Real traffic is mostly cheap PR analyses (sized to the changeset)
 plus some full branch analyses. A single measured CE time (from a full scan of the seed)
-therefore *over*-estimates the average cost. Give both and the model blends them:
+therefore *over*-estimates the average cost. The advanced `model:` block blends them:
 
 ```yaml
-model:
-  devs: 5000
-  analyses_per_dev_day: 15
-  peak_fraction: 0.25
+devs: 5000                # sizing stays top-level
+model:                    # model: holds only the advanced CE-time blend
   pr_fraction: 0.8        # 80% of analyses are PRs …
   pr_ce_seconds: 0.5      # … at ~0.5s CE each
   branch_ce_seconds: 8    # full branch analyses at ~8s
