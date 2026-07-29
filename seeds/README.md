@@ -15,6 +15,6 @@ against SonarQube 2026.1. Regenerate by scanning the project with `sonar.scanner
 
 `mixed` replays a realistic workload: mostly small PR-sized analyses (`jackson-pr.zip`, the
 `node` package scanned on its own) plus the occasional full scan (`jackson.zip`), defaulting
-to 90% PRs (`model.pr_fraction`). `jackson-pr.zip` was produced with a CLI scan of just that
+to 80% PRs (`model.pr_fraction`). `jackson-pr.zip` was produced with a CLI scan of just that
 package (`sonar.sources=…/databind/node`, `sonar.java.binaries=target/classes`) so the report
 genuinely contains only those 27 files.

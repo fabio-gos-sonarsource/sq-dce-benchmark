@@ -40,7 +40,7 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		// blended PR/branch cost: real traffic is mostly cheap PR analyses
 		f := mdl.PRFraction
 		if f <= 0 || f > 1 {
-			f = 0.9
+			f = 0.8
 		}
 		T = f*mdl.PRCeSeconds + (1-f)*mdl.BranchCeSeconds
 		tSource = fmt.Sprintf("%.1fs/analysis blended (%.0f%% PRs @ %.1fs + %.0f%% branch @ %.1fs)",

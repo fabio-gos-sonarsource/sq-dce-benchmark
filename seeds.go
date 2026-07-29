@@ -40,12 +40,12 @@ const defaultSample = "js"
 
 // mixPRFraction is the share of a mixed-seed burst that replays the small PR-sized
 // report (the rest replay the full scan). Reuses model.pr_fraction when set so the
-// measured mix and the production model agree; defaults to a realistic 0.9.
+// measured mix and the production model agree; defaults to a realistic 0.8.
 func mixPRFraction(cfg *Config) float64 {
 	if cfg.Model != nil && cfg.Model.PRFraction > 0 && cfg.Model.PRFraction <= 1 {
 		return cfg.Model.PRFraction
 	}
-	return 0.9
+	return 0.8
 }
 
 // replaySource holds the report directory (or directories) to replay during the burst.
@@ -64,7 +64,7 @@ func (r *replaySource) pick(i int) string {
 	if r.prFrac >= 1 {
 		return r.pr
 	}
-	everyN := int(math.Round(1 / (1 - r.prFrac))) // e.g. prFrac 0.9 -> every 10th is a full scan
+	everyN := int(math.Round(1 / (1 - r.prFrac))) // e.g. prFrac 0.8 -> every 5th is a full scan
 	if everyN < 2 {
 		everyN = 2
 	}
