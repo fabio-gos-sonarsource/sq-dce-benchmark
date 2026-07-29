@@ -9,11 +9,16 @@ import (
 )
 
 func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results map[string]Metrics, names []string, cols map[string][3]int) {
+	// The production model is the core EE-vs-DCE story, so it renders by default even
+	// with no model: block — using assumed figures the reader should override in bench.yaml.
 	mdl := cfg.Model
-	if mdl == nil || mdl.Devs <= 0 {
-		return
+	if mdl == nil {
+		mdl = &Model{}
 	}
 	devs := mdl.Devs
+	if devs <= 0 {
+		devs = 5000 // default developer population; set model.devs to the customer's real count
+	}
 	apd := mdl.AnalysesPerDevDay
 	if apd == 0 {
 		apd = 15 // default assumption; override with the customer's real figure

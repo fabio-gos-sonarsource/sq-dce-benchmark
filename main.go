@@ -79,18 +79,37 @@ func (c *Config) concurrency() int {
 	return 12
 }
 
-func (c *Config) resultsFile() string {
-	if c.ResultsFile != "" {
-		return c.ResultsFile
+// exeDir is the folder the binary lives in — where outputs go by default, so a
+// double-clicked binary writes next to itself rather than into the launch cwd (~).
+func exeDir() string {
+	if exe, err := os.Executable(); err == nil {
+		return filepath.Dir(exe)
 	}
-	return "results.json"
+	return "."
+}
+
+// resolveOutput puts relative output paths next to the binary; absolute paths are kept.
+func resolveOutput(p string) string {
+	if filepath.IsAbs(p) {
+		return p
+	}
+	return filepath.Join(exeDir(), p)
+}
+
+func (c *Config) resultsFile() string {
+	p := c.ResultsFile
+	if p == "" {
+		p = "results.json"
+	}
+	return resolveOutput(p)
 }
 
 func (c *Config) reportPath() string {
-	if c.Report != "" {
-		return c.Report
+	p := c.Report
+	if p == "" {
+		p = "sq-ee-dce-benchmark.pdf"
 	}
-	return "sq-ee-dce-benchmark.pdf"
+	return resolveOutput(p)
 }
 
 func die(format string, a ...any) {
