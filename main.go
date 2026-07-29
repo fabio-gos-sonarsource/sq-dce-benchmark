@@ -148,7 +148,7 @@ func loadConfig(path string) *Config {
 		c.Namespace = "sq_ee_dce_benchmark"
 	}
 	if c.Sample == "" {
-		c.Sample = "js"
+		c.Sample = "mixed"
 	}
 	return &c
 }
