@@ -5,8 +5,9 @@ These are **pre-generated SonarScanner reports** replayed by the benchmark when
 
 | Sample (`sample:`) | Project | Licence | ~ncloc |
 |---|---|---|---|
-| `python` | [Rich](https://github.com/Textualize/rich) | MIT (`python.LICENSE`) | ~32k |
-| `java` | [Apache Commons Lang](https://github.com/apache/commons-lang) | Apache-2.0 (`java.LICENSE`) | ~34k |
+| `js` | [React](https://github.com/facebook/react) | MIT (`react.LICENSE`) | ~98k |
+| `java` | [jackson-databind](https://github.com/FasterXML/jackson-databind) | Apache-2.0 (`jackson.LICENSE`) | ~76k |
 
 `*.zip` hold each project's `scanner-report/` (which embeds the project source), generated
-against SonarQube 2026.1. Regenerate by scanning the project with `sonar.scanner.keepReport=true`.
+against SonarQube 2026.1. Regenerate by scanning the project with `sonar.scanner.keepReport=true`
+(the `analysis-cache2.pb` / `analysis-warnings.pb` entries are excluded — not needed for replay).

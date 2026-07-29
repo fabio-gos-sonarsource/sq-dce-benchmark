@@ -11,7 +11,7 @@ targets:
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
 
 # --- optional (defaults shown; uncomment to change) --------------------------
-# sample: python          # bundled seed to replay: python (~32k ncloc) | java (~34k)
+# sample: js              # bundled seed to replay: js (React, ~98k ncloc) | java (jackson-databind, ~76k)
 # n: 40                   # analyses fired per target (burst size)
 # concurrency: 12         # parallel submissions during the burst
 # report: sq-ee-dce-benchmark.pdf

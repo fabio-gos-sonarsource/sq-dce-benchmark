@@ -16,7 +16,7 @@ import (
 // JDK/Maven, or network build step — the tool replays the embedded report directly.
 // Generated against the oldest supported SonarQube (2026.1), so they replay on 2026.1+.
 //
-//go:embed seeds/python.zip seeds/java.zip
+//go:embed seeds/react.zip seeds/jackson.zip
 var seedFS embed.FS
 
 // sampleInfo describes a bundled seed for the run banner / report label.
@@ -26,16 +26,19 @@ type sampleInfo struct {
 }
 
 var samples = map[string]sampleInfo{
-	"python": {label: "Rich (Python, ~32k ncloc)", zip: "seeds/python.zip"},
-	"java":   {label: "Apache Commons Lang (Java, ~34k ncloc)", zip: "seeds/java.zip"},
+	"js":   {label: "React (JavaScript, ~98k ncloc)", zip: "seeds/react.zip"},
+	"java": {label: "jackson-databind (Java, ~76k ncloc)", zip: "seeds/jackson.zip"},
 }
+
+// defaultSample is used when neither seed_repo nor sample is set.
+const defaultSample = "js"
 
 // materializeSample unzips a bundled seed's scanner-report into workdir and returns
 // the report directory (the one containing metadata.pb), ready for staging/replay.
 func materializeSample(name, workdir string) (string, sampleInfo) {
 	info, ok := samples[name]
 	if !ok {
-		die("unknown sample %q — use one of: python, java (or set seed_repo to your own repo)", name)
+		die("unknown sample %q — use one of: js, java (or set seed_repo to your own repo)", name)
 	}
 	data, err := seedFS.ReadFile(info.zip)
 	if err != nil {
@@ -88,7 +91,7 @@ func (c *Config) seedLabel() string {
 	}
 	name := c.Sample
 	if name == "" {
-		name = "python"
+		name = defaultSample
 	}
 	if info, ok := samples[name]; ok {
 		return info.label
@@ -105,7 +108,7 @@ func seedReport(t Target, cfg *Config, workdir string) string {
 	}
 	name := cfg.Sample
 	if name == "" {
-		name = "python"
+		name = defaultSample
 	}
 	dir, info := materializeSample(name, workdir)
 	fmt.Printf("  using bundled pre-scanned sample: %s — no scanner needed\n", info.label)

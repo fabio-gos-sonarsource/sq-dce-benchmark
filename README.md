@@ -99,7 +99,7 @@ cp bench.example.yaml bench.yaml     # then edit: hosts, tokens, n
 build, or clone. Choose which with:
 
 ```yaml
-sample: python      # Rich, ~32k ncloc  (or:  java  -> Apache Commons Lang, ~34k ncloc)
+sample: js          # React, ~98k ncloc  (or:  java  -> jackson-databind, ~76k ncloc)
 ```
 
 To benchmark **your own** code instead, set `seed_repo` (this is the only mode that runs
@@ -249,7 +249,7 @@ manufacturing a throughput gap.
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
 | `build-release.sh` | cross-compile the binaries for all platforms |
 | `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |
-| `seeds/` | bundled pre-scanned sample reports (`python` = Rich, `java` = Commons Lang) + their licences |
+| `seeds/` | bundled pre-scanned sample reports (`js` = React, `java` = jackson-databind) + their licences |
 
 ## Notes / attribution
 
