@@ -209,7 +209,7 @@ type plot struct {
 func (p *plot) px(v float64) float64 { return p.x + v/p.xmax*p.w }
 func (p *plot) py(v float64) float64 { return p.y + p.h - v/p.ymax*p.h }
 
-func (p *plot) frame(tr func(string) string, title, xlabel string, xfmt func(float64) string) {
+func (p *plot) frame(tr func(string) string, title, xlabel, ylabel string, xfmt func(float64) string) {
 	pdf := p.pdf
 	pdf.SetFont("Helvetica", "B", 10.5)
 	setText(pdf, ink)
@@ -239,10 +239,30 @@ func (p *plot) frame(tr func(string) string, title, xlabel string, xfmt func(flo
 	pdf.SetLineWidth(0.3)
 	pdf.Line(p.x, p.y, p.x, p.y+p.h)
 	pdf.Line(p.x, p.y+p.h, p.x+p.w, p.y+p.h)
-	// x-axis label (below). The y-axis unit is folded into each chart's title.
+	// x-axis label (below)
 	pdf.SetFont("Helvetica", "", 8.5)
 	pdf.SetXY(p.x, p.y+p.h+5)
 	pdf.CellFormat(p.w, 4, tr(xlabel), "", 0, "C", false, 0, "")
+	// y-axis label: drawn rotated 90° (reads bottom-to-top) and vertically centred to
+	// the left of the ticks, so it never collides with the centred title above the plot.
+	// pdf.Text uses absolute coordinates — CellFormat/SetXY would treat the negative X
+	// this needs as "relative to the right edge" and fling the label off-page.
+	if ylabel != "" {
+		setText(pdf, mut)
+		lbl := tr(ylabel)
+		lx := 9.0                             // left of the numeric ticks (which start at x≈16)
+		ystart := p.y + p.h/2 + pdf.GetStringWidth(lbl)/2 // so the rotated text centres on the axis
+		pdf.TransformBegin()
+		pdf.TransformRotate(90, lx, ystart)
+		pdf.Text(lx, ystart, lbl)
+		pdf.TransformEnd()
+	}
+}
+
+// dot draws a small filled marker in data coordinates.
+func (p *plot) dot(x, y float64, c [3]int) {
+	setFill(p.pdf, c)
+	p.pdf.Circle(p.px(x), p.py(y), 1.1, "F")
 }
 
 func (p *plot) line(pts [][2]float64, c [3]int, fill bool) {
@@ -298,7 +318,7 @@ func drawQueueChart(pdf *gofpdf.Fpdf, tr func(string) string, results map[string
 	}
 	ymax *= 1.12
 	p := &plot{pdf: pdf, x: 30, y: pdf.GetY() + 10, w: usableW - 30, h: 52, xmax: xmax, ymax: ymax}
-	p.frame(tr, "Queue size over time — analyses waiting (measured)", "seconds after burst", func(v float64) string { return fmt.Sprintf("%.0f", v) })
+	p.frame(tr, "Queue size over time (measured)", "seconds after burst", "analyses waiting", func(v float64) string { return fmt.Sprintf("%.0f", v) })
 	var labels []string
 	var lcols [][3]int
 	for _, n := range names {
