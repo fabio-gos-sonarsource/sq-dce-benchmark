@@ -362,7 +362,7 @@ func runTarget(t Target, cfg *Config) Metrics {
 	stage, _ := os.MkdirTemp("", "sqstage_"+t.Name+"_")
 	ns := cfg.Namespace
 	post(t, "/api/projects/bulk_delete", url.Values{"q": {ns}})
-	rep := seedReport(t, cfg, work)
+	rs := seedReport(t, cfg, work)
 	profiles := fetchProfiles(t)
 
 	w := detectWorkers(t)
@@ -377,7 +377,7 @@ func runTarget(t Target, cfg *Config) Metrics {
 	fmt.Println("  validating one replay ...")
 	vkey := ns + "-validate"
 	post(t, "/api/projects/create", url.Values{"project": {vkey}, "name": {vkey}})
-	if z, err := stageZip(rep, vkey, time.Now().UnixMilli(), profiles, stage); err == nil {
+	if z, err := stageZip(rs.full, vkey, time.Now().UnixMilli(), profiles, stage); err == nil {
 		submit(t, vkey, z)
 	} else {
 		die("staging failed: %v", err)
@@ -413,12 +413,20 @@ func runTarget(t Target, cfg *Config) Metrics {
 	fmt.Printf("  staging %d reports ...\n", count)
 	base := time.Now().UnixMilli()
 	zips := make(map[string]string, count)
+	nPR := 0
 	for i, k := range keys {
-		z, err := stageZip(rep, k, base-int64(count-(i+1))*2000, profiles, stage)
+		src := rs.pick(i)
+		if src == rs.pr {
+			nPR++
+		}
+		z, err := stageZip(src, k, base-int64(count-(i+1))*2000, profiles, stage)
 		if err != nil {
 			die("staging failed: %v", err)
 		}
 		zips[k] = z
+	}
+	if rs.pr != "" {
+		fmt.Printf("  mixed workload: %d PR-sized + %d full (~%.0f%% PR)\n", nPR, count-nPR, float64(nPR)/float64(count)*100)
 	}
 
 	stop := startSampler(t)
