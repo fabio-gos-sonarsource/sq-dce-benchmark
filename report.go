@@ -209,7 +209,7 @@ type plot struct {
 func (p *plot) px(v float64) float64 { return p.x + v/p.xmax*p.w }
 func (p *plot) py(v float64) float64 { return p.y + p.h - v/p.ymax*p.h }
 
-func (p *plot) frame(tr func(string) string, title, xlabel, ylabel string, xfmt func(float64) string) {
+func (p *plot) frame(tr func(string) string, title, xlabel string, xfmt func(float64) string) {
 	pdf := p.pdf
 	pdf.SetFont("Helvetica", "B", 10.5)
 	setText(pdf, ink)
@@ -239,7 +239,7 @@ func (p *plot) frame(tr func(string) string, title, xlabel, ylabel string, xfmt 
 	pdf.SetLineWidth(0.3)
 	pdf.Line(p.x, p.y, p.x, p.y+p.h)
 	pdf.Line(p.x, p.y+p.h, p.x+p.w, p.y+p.h)
-	// labels
+	// x-axis label (below). The y-axis unit is folded into each chart's title.
 	pdf.SetFont("Helvetica", "", 8.5)
 	pdf.SetXY(p.x, p.y+p.h+5)
 	pdf.CellFormat(p.w, 4, tr(xlabel), "", 0, "C", false, 0, "")
@@ -298,7 +298,7 @@ func drawQueueChart(pdf *gofpdf.Fpdf, tr func(string) string, results map[string
 	}
 	ymax *= 1.12
 	p := &plot{pdf: pdf, x: 30, y: pdf.GetY() + 10, w: usableW - 30, h: 52, xmax: xmax, ymax: ymax}
-	p.frame(tr, "Queue size over time (measured)", "seconds after burst", "", func(v float64) string { return fmt.Sprintf("%.0f", v) })
+	p.frame(tr, "Queue size over time — analyses waiting (measured)", "seconds after burst", func(v float64) string { return fmt.Sprintf("%.0f", v) })
 	var labels []string
 	var lcols [][3]int
 	for _, n := range names {
@@ -314,11 +314,6 @@ func drawQueueChart(pdf *gofpdf.Fpdf, tr func(string) string, results map[string
 		labels = append(labels, fmt.Sprintf("%s — %d workers", n, results[n].Workers))
 		lcols = append(lcols, cols[n])
 	}
-	// y-axis label (rotated-ish: placed at top-left)
-	pdf.SetFont("Helvetica", "", 8)
-	setText(pdf, mut)
-	pdf.SetXY(16, p.y-6)
-	pdf.CellFormat(30, 4, tr("analyses in queue"), "", 0, "L", false, 0, "")
 	p.legend(tr, labels, lcols)
 	pdf.SetY(p.y + p.h + 12)
 }

@@ -9,11 +9,16 @@ import (
 )
 
 func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results map[string]Metrics, names []string, cols map[string][3]int) {
+	// The production model is the core EE-vs-DCE story, so it renders by default even
+	// with no model: block — using assumed figures the reader should override in bench.yaml.
 	mdl := cfg.Model
-	if mdl == nil || mdl.Devs <= 0 {
-		return
+	if mdl == nil {
+		mdl = &Model{}
 	}
 	devs := mdl.Devs
+	if devs <= 0 {
+		devs = 5000 // default developer population; set model.devs to the customer's real count
+	}
 	apd := mdl.AnalysesPerDevDay
 	if apd == 0 {
 		apd = 15 // default assumption; override with the customer's real figure
@@ -230,8 +235,8 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		pdf.AddPage()
 	}
 	p := &plot{pdf: pdf, x: 30, y: pdf.GetY() + 10, w: usableW - 30, h: 52, xmax: xmax, ymax: ymax}
-	p.frame(tr, fmt.Sprintf("Production model at %s developers — avg feedback delay vs load", commas(float64(devs))),
-		"peak analysis submission rate (analyses/hour)", "", func(v float64) string { return fmt.Sprintf("%.0fk", v/1000) })
+	p.frame(tr, fmt.Sprintf("Production model at %s developers — avg feedback delay (min) vs load", commas(float64(devs))),
+		"peak analysis submission rate (analyses/hour)", func(v float64) string { return fmt.Sprintf("%.0fk", v/1000) })
 	var labels []string
 	var lcols [][3]int
 	for _, n := range names {
@@ -256,10 +261,6 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	setText(pdf, ink)
 	pdf.SetXY(p.px(peak)-24, p.y+2)
 	pdf.CellFormat(22, 4, tr(fmt.Sprintf("%s-dev peak", commas(float64(devs)))), "", 0, "R", false, 0, "")
-	pdf.SetXY(16, p.y-6)
-	pdf.SetFont("Helvetica", "", 8)
-	setText(pdf, mut)
-	pdf.CellFormat(30, 4, tr("avg feedback delay (min)"), "", 0, "L", false, 0, "")
 	p.legend(tr, labels, lcols)
 	pdf.SetY(p.y + p.h + 12)
 
