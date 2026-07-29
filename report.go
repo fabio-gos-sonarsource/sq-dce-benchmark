@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -141,10 +142,14 @@ func generateReport(cfg *Config, results map[string]Metrics, names []string) {
 		"via api/ce/submit. Ensure both instances run the same version, comparable hardware/DB, and equal per-worker "+
 		"CE heap for a fair comparison."), "", "L", false)
 
-	if err := pdf.OutputFileAndClose(cfg.reportPath()); err != nil {
+	out := cfg.reportPath()
+	if err := pdf.OutputFileAndClose(out); err != nil {
 		die("failed to write report: %v", err)
 	}
-	fmt.Printf("\nReport written: %s\n", cfg.reportPath())
+	if abs, e := filepath.Abs(out); e == nil {
+		out = abs // print the full path so it's easy to find (esp. when double-clicked from ~)
+	}
+	fmt.Printf("\nReport written: %s\n", out)
 }
 
 func repeat(v float64, n int) []float64 {
