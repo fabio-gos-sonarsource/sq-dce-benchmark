@@ -235,8 +235,8 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 		pdf.AddPage()
 	}
 	p := &plot{pdf: pdf, x: 30, y: pdf.GetY() + 10, w: usableW - 30, h: 52, xmax: xmax, ymax: ymax}
-	p.frame(tr, fmt.Sprintf("Production model at %s developers — avg feedback delay vs load", commas(float64(devs))),
-		"peak analysis submission rate (analyses/hour)", "", func(v float64) string { return fmt.Sprintf("%.0fk", v/1000) })
+	p.frame(tr, fmt.Sprintf("Production model at %s developers — avg feedback delay (min) vs load", commas(float64(devs))),
+		"peak analysis submission rate (analyses/hour)", func(v float64) string { return fmt.Sprintf("%.0fk", v/1000) })
 	var labels []string
 	var lcols [][3]int
 	for _, n := range names {
@@ -261,10 +261,6 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	setText(pdf, ink)
 	pdf.SetXY(p.px(peak)-24, p.y+2)
 	pdf.CellFormat(22, 4, tr(fmt.Sprintf("%s-dev peak", commas(float64(devs)))), "", 0, "R", false, 0, "")
-	pdf.SetXY(16, p.y-6)
-	pdf.SetFont("Helvetica", "", 8)
-	setText(pdf, mut)
-	pdf.CellFormat(30, 4, tr("avg feedback delay (min)"), "", 0, "L", false, 0, "")
 	p.legend(tr, labels, lcols)
 	pdf.SetY(p.y + p.h + 12)
 
