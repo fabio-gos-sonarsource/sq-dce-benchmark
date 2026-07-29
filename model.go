@@ -16,11 +16,11 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	devs := mdl.Devs
 	apd := mdl.AnalysesPerDevDay
 	if apd == 0 {
-		apd = 8
+		apd = 15 // default assumption; override with the customer's real figure
 	}
 	pf := mdl.PeakFraction
 	if pf == 0 {
-		pf = 0.15
+		pf = 0.25 // share of a day's analyses in the busiest hour; override with real data
 	}
 	daily := float64(devs) * apd
 	peak := daily * pf
