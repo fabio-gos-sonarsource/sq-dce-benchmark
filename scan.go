@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"io/fs"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -270,6 +272,170 @@ func runScan(t Target, name string, args []string, cwd string, cfg *Config, mode
 			"raise 'scan_timeout' in bench.yaml if the build is legitimately long.", t.Name, timeout)
 	}
 	return strings.Join(tail, "\n")
+}
+
+// --- PR-slice auto-pick (for seed_repo + pr_mix) --------------------------------------
+//
+// When pr_mix is set on a seed_repo run, we replay a realistic PR + full mix. The "PR"
+// is an auto-picked, module-sized slice of the customer's own repo scanned on its own —
+// the same idea as the bundled mixed seed, but derived from just the folder they pass
+// (no git history required). Any failure here is non-fatal: the run falls back to full-only.
+
+var prSliceExts = map[string]bool{
+	".java": true, ".kt": true, ".kts": true, ".scala": true, ".groovy": true,
+	".js": true, ".jsx": true, ".ts": true, ".tsx": true, ".vue": true,
+	".py": true, ".go": true, ".rb": true, ".php": true, ".cs": true,
+	".c": true, ".cc": true, ".cpp": true, ".h": true, ".hpp": true,
+	".swift": true, ".rs": true, ".m": true,
+}
+
+var prSliceSkip = map[string]bool{
+	".git": true, "node_modules": true, "target": true, "build": true, "dist": true,
+	"out": true, "bin": true, "obj": true, ".gradle": true, ".idea": true, ".vscode": true,
+	"vendor": true, "venv": true, ".venv": true, "__pycache__": true, "testdata": true,
+	"test": true, "tests": true, "__tests__": true, "spec": true,
+}
+
+// pickPRSlice groups the repo's source files by folder (skipping VCS/build/test dirs) and
+// returns the folder whose file count is closest to a small target, so replaying it
+// approximates a changeset-sized PR. Returns repo-relative path, file count, ok=false if none.
+func pickPRSlice(repo string) (string, int, bool) {
+	const target = 20
+	counts := map[string]int{}
+	filepath.WalkDir(repo, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			if p != repo && (prSliceSkip[strings.ToLower(d.Name())] || strings.HasPrefix(d.Name(), ".")) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if prSliceExts[strings.ToLower(filepath.Ext(d.Name()))] {
+			counts[filepath.Dir(p)]++
+		}
+		return nil
+	})
+	dirs := make([]string, 0, len(counts))
+	for dir := range counts {
+		if counts[dir] >= 4 { // too tiny to be a meaningful slice
+			dirs = append(dirs, dir)
+		}
+	}
+	sort.Strings(dirs) // deterministic pick regardless of walk order
+	best, bestScore, bestN := "", 1<<30, 0
+	for _, dir := range dirs {
+		score := counts[dir] - target
+		if score < 0 {
+			score = -score
+		}
+		if score < bestScore || (score == bestScore && len(dir) > len(best)) {
+			best, bestScore, bestN = dir, score, counts[dir]
+		}
+	}
+	if best == "" {
+		return "", 0, false
+	}
+	rel, err := filepath.Rel(repo, best)
+	if err != nil {
+		return "", 0, false
+	}
+	return rel, bestN, true
+}
+
+// findJavaBinaries locates compiled classes from the full build so the PR-slice CLI scan
+// can analyse Java with semantics. Best-effort: returns "" for non-Java repos or unknown
+// layouts (the slice scan then runs without binaries, and falls back if that fails).
+func findJavaBinaries(repo string) string {
+	var found []string
+	for _, c := range []string{"target/classes", "build/classes/java/main", "build/classes/kotlin/main", "out/production/classes"} {
+		if p := filepath.Join(repo, c); exists(p) {
+			found = append(found, p)
+		}
+	}
+	if len(found) == 0 { // multi-module: collect a few module target/classes dirs
+		filepath.WalkDir(repo, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || !d.IsDir() {
+				return nil
+			}
+			if d.Name() == ".git" || d.Name() == "node_modules" {
+				return filepath.SkipDir
+			}
+			if d.Name() == "classes" && filepath.Base(filepath.Dir(p)) == "target" {
+				found = append(found, p)
+				if len(found) >= 20 {
+					return filepath.SkipAll
+				}
+			}
+			return nil
+		})
+	}
+	return strings.Join(found, ",")
+}
+
+// producePRSlice runs a CLI scan of one slice directory and returns its report dir. Unlike
+// produceSeedReport it never aborts the run — it returns an error so the caller can fall
+// back to full-scan-only.
+func producePRSlice(t Target, cfg *Config, workdir, slice, binaries string) (string, error) {
+	name := firstNonEmpty(cfg.ScannerCLI, cfg.Scanner, "sonar-scanner")
+	key := cfg.Namespace + "-prslice"
+	prWork := filepath.Join(workdir, "pr")
+	args := []string{
+		"-Dsonar.host.url=" + strings.TrimRight(t.URL, "/"),
+		"-Dsonar.token=" + t.Token,
+		"-Dsonar.projectKey=" + key, "-Dsonar.projectName=" + key,
+		"-Dsonar.scanner.keepReport=true", "-Dsonar.scm.disabled=true",
+		"-Dsonar.projectBaseDir=" + cfg.SeedRepo,
+		"-Dsonar.sources=" + slice,
+		"-Dsonar.working.directory=" + prWork,
+		"-Dsonar.scanner.skipJreProvisioning=true",
+		"-Dsonar.exclusions=" + firstNonEmpty(cfg.Exclusions, defaultExcl),
+	}
+	if binaries != "" {
+		args = append(args, "-Dsonar.java.binaries="+binaries)
+	}
+	args = append(args, props(cfg)...)
+
+	timeout := cfg.ScanTimeout
+	if timeout <= 0 {
+		timeout = 600 // the slice is small; don't wait as long as a full build
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	env := os.Environ()
+	if cfg.JavaHome != "" {
+		env = append(env, "JAVA_HOME="+cfg.JavaHome)
+		env = prependPath(env, filepath.Join(cfg.JavaHome, "bin"))
+	}
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s", scanErrHint(err, out))
+	}
+	rep := findReport(prWork)
+	if rep == "" {
+		return "", fmt.Errorf("scan produced no report")
+	}
+	post(t, "/api/projects/bulk_delete", url.Values{"q": {key}}) // keep only the report
+	return rep, nil
+}
+
+// scanErrHint summarises a failed scan into one short line (the exec error plus the last
+// ERROR line from the output, if any).
+func scanErrHint(err error, out []byte) string {
+	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+	for i := len(lines) - 1; i >= 0 && i >= len(lines)-40; i-- {
+		if strings.Contains(lines[i], "ERROR") {
+			hint := strings.TrimSpace(lines[i])
+			if len(hint) > 160 {
+				hint = hint[:160]
+			}
+			return err.Error() + "; " + hint
+		}
+	}
+	return err.Error()
 }
 
 func prependPath(env []string, dir string) []string {

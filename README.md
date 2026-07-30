@@ -84,7 +84,14 @@ a scanner — see *Compatible languages* for the toolchain it needs):
 
 ```yaml
 seed_repo: /path/to/your/repo
+# pr_mix: true            # replay a realistic PR + full mix of your repo (see below)
 ```
+
+Add `pr_mix: true` to get the same realistic mix as the `mixed` sample, but on **your**
+code: after the full scan, the tool auto-picks a module-sized slice of the repo, scans it
+on its own as a "PR-sized" changeset, and replays 80% slice + 20% full. It needs only the
+folder you pass (no git history), and if a slice can't be produced it falls back to a
+full-scan-only run.
 
 ## Run
 
