@@ -136,6 +136,11 @@ validate one replay (fail fast if versions differ) → pre-create N projects →
 parallel while sampling the queue every second → collect `api/ce/activity` metrics →
 delete the bench projects. Then it writes the comparison **PDF** (`report:` path).
 
+Outputs (the PDF and `results_file`) are written **next to the binary** by default: a
+relative path resolves to the executable's folder, not the launch directory — so a
+double-clicked run's report lands beside `sq-benchmark`, not in your home folder. Give an
+absolute path to put it elsewhere.
+
 ### Run targets independently (recommended when EE and DCE share hardware)
 
 If both instances aren't on separate hardware, run each **on its own** so they don't
@@ -212,13 +217,12 @@ targets:
 A compact PDF with a side-by-side metrics table (drain time, throughput, avg/p95
 queue wait, CE time per task) and a **queue-size-over-time** chart.
 
-### Production model (optional)
+### Production model
 
-If you add a `model:` block to `bench.yaml`, the report also includes a **production
-model**: it takes the *measured* CE time per analysis and each target's *auto-detected*
-workers/nodes, and projects the **average feedback delay vs. load** for a developer
-population you choose. The model **always renders** (with sensible defaults); to size it
-for your org the usual knob is a single top-level line:
+The report always includes a **production model**: it takes the *measured* CE time per
+analysis and each target's *auto-detected* workers/nodes, and projects the **average
+feedback delay vs. load** for a developer population you choose. It renders with sensible
+defaults; to size it for your org the usual knob is a single top-level line:
 
 ```yaml
 devs: 5000                  # developer population — the one knob most people set
@@ -227,19 +231,21 @@ devs: 5000                  # developer population — the one knob most people 
 ```
 
 It renders the assumptions, a plain-language **verdict** (*"a single EE node handles
-~X/hr — above/below your ~Y/hr peak"*), a capacity/utilisation/feedback-delay table —
-the **measured** EE and DCE configs plus auto-generated **DCE sizing estimates** — and a
-chart showing where each configuration saturates as load rises. Change `devs` and re-run
-`report` to re-model instantly.
+~X/hr — above/below your ~Y/hr peak"*), a capacity/utilisation/feedback-delay table for
+the **measured** EE and DCE configurations, and a chart showing where each configuration
+saturates as load rises. Change `devs` and re-run `report` to re-model instantly.
 
 **PR/branch mix.** Real traffic is mostly cheap PR analyses (sized to the changeset)
-plus some full branch analyses. A single measured CE time (from a full scan of the seed)
-therefore *over*-estimates the average cost. The advanced `model:` block blends them:
+plus some full branch analyses. The default `mixed` seed already replays that blend, so
+its *measured* CE time is realistic out of the box. If you instead run a full-scan seed
+(`js`/`java`) — whose single measured CE time *over*-estimates the average cost — or want
+to model different figures, the advanced `model:` block blends a PR and a branch CE time
+explicitly:
 
 ```yaml
 devs: 5000                # sizing stays top-level
 model:                    # model: holds only the advanced CE-time blend
-  pr_fraction: 0.8        # 80% of analyses are PRs …
+  pr_fraction: 0.8        # 80% of analyses are PRs (also sets the mixed-seed split)
   pr_ce_seconds: 0.5      # … at ~0.5s CE each
   branch_ce_seconds: 8    # full branch analyses at ~8s
 ```
