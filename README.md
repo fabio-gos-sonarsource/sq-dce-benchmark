@@ -5,42 +5,9 @@ SonarQube **Enterprise Edition** node and a **Data Center Edition** cluster, and
 produces a PDF report, designed to show the impact of DCE on analysis feedback
 (queue behaviour) at scale.
 
-It ships as a **single static binary** with no dependencies to install, so it runs
-on locked-down machines that only allow a downloaded executable.
-
 > ⚠️ **Non-production benchmark.** It generates load by replaying SonarScanner's
 > internal report format via `api/ce/submit` (unsupported internals). Run it only
 > against **non-production** instances.
-
-## Get the binary
-
-Download the archive for your OS/architecture from the release and unzip it. Each
-archive holds the `sq-benchmark` binary, `bench.example.yaml`, and a double-click
-launcher (`run.command` on macOS, `run.bat` on Windows).
-
-| Platform | Archive |
-|---|---|
-| macOS (Apple Silicon / Intel) | `sq-benchmark_<ver>_darwin_arm64.zip` · `…_darwin_amd64.zip` |
-| Linux (arm64 / x86-64) | `…_linux_arm64.zip` · `…_linux_amd64.zip` |
-| Windows (x86-64 / arm64) | `…_windows_amd64.zip` · `…_windows_arm64.zip` |
-
-Or build from source (Go 1.24+):
-
-```bash
-go build -o sq-benchmark .
-```
-
-Maintainers cross-compile all platforms at once:
-
-```bash
-./build-release.sh v1.0.0        # -> dist/v1.0.0/*.zip
-```
-
-Verify it runs:
-
-```bash
-./sq-benchmark version
-```
 
 ## What you need
 
