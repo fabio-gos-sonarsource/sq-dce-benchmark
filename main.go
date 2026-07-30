@@ -50,7 +50,8 @@ type LoadSpec struct {
 // Config mirrors bench.yaml. Only `targets` is required; everything else defaults.
 type Config struct {
 	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> bundled sample
-	Sample       string            `yaml:"sample"`    // bundled sample when seed_repo is empty: python | java
+	Sample       string            `yaml:"sample"`    // bundled sample when seed_repo is empty: js | java | mixed
+	PRMix        bool              `yaml:"pr_mix"`    // seed_repo: also replay an auto-picked PR-sized slice (80/20)
 	N            int               `yaml:"n"`
 	Concurrency  int               `yaml:"concurrency"`
 	ScanMode     string            `yaml:"scan_mode"`

@@ -140,13 +140,34 @@ func (c *Config) seedLabel() string {
 	return info.label
 }
 
+// addPRSlice tries to enrich rs with an auto-picked PR-sized slice of the customer's repo
+// so the burst replays a realistic PR + full mix. Any failure leaves rs full-only.
+func addPRSlice(t Target, cfg *Config, workdir string, rs *replaySource) {
+	slice, n, ok := pickPRSlice(cfg.SeedRepo)
+	if !ok {
+		fmt.Println("  PR mix: no suitable slice found in the repo — running full-scan only")
+		return
+	}
+	pr, err := producePRSlice(t, cfg, workdir, slice, findJavaBinaries(cfg.SeedRepo))
+	if err != nil {
+		fmt.Printf("  PR mix: slice scan failed (%v) — running full-scan only\n", err)
+		return
+	}
+	rs.pr, rs.prFrac = pr, mixPRFraction(cfg)
+	fmt.Printf("  PR mix: %.0f%% slice (%s, %d files) + %.0f%% full\n", rs.prFrac*100, slice, n, (1-rs.prFrac)*100)
+}
+
 // seedReport returns the report(s) to replay: the customer's own scanned repo when
 // seed_repo is set, otherwise a bundled pre-scanned sample (no scanner needed). A mixed
 // sample returns both a full and a PR-sized report for the burst to interleave.
 func seedReport(t Target, cfg *Config, workdir string) *replaySource {
 	if cfg.SeedRepo != "" {
 		fmt.Println("  scanning seed once ...")
-		return &replaySource{full: produceSeedReport(t, cfg, workdir)}
+		rs := &replaySource{full: produceSeedReport(t, cfg, workdir)}
+		if cfg.PRMix {
+			addPRSlice(t, cfg, workdir, rs)
+		}
+		return rs
 	}
 	name := cfg.Sample
 	if name == "" {

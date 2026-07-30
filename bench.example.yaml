@@ -23,6 +23,9 @@ targets:
 # scan_mode: auto         # auto | maven | gradle | cli
 # java_home: /path/to/jdk17   # if the project needs a specific JDK
 # build_args: "-P profile"    # extra mvn/gradle args (build profile / module selection)
+# pr_mix: true            # also replay a smaller, auto-picked slice of the repo as PR-sized
+#                         # analyses (80% PR + 20% full) so the load mirrors real traffic.
+#                         # Falls back to full-scan-only if a slice can't be produced.
 
 # Sustained load instead of a one-shot burst: submit at a steady rate for a while.
 # This is the regime where a single EE node saturates (queue grows) while a bigger DCE
