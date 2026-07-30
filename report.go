@@ -82,7 +82,7 @@ func generateReport(cfg *Config, results map[string]Metrics, names []string) {
 	pdf.CellFormat(usableW, 9, tr("SonarQube — Compute Engine throughput benchmark"), "", 1, "L", false, 0, "")
 	pdf.SetFont("Helvetica", "", 9)
 	setText(pdf, mut)
-	pdf.CellFormat(usableW, 5, tr(fmt.Sprintf("Burst of N=%d analyses · seed: %s · replay method", cfg.N, cfg.seedLabel())), "", 1, "L", false, 0, "")
+	pdf.CellFormat(usableW, 5, tr(fmt.Sprintf("%s · seed: %s · replay method", cfg.runDesc(), cfg.seedLabel())), "", 1, "L", false, 0, "")
 	hr(pdf)
 
 	// ---- comparison table ----
@@ -318,7 +318,7 @@ func drawQueueChart(pdf *gofpdf.Fpdf, tr func(string) string, results map[string
 	}
 	ymax *= 1.12
 	p := &plot{pdf: pdf, x: 30, y: pdf.GetY() + 10, w: usableW - 30, h: 52, xmax: xmax, ymax: ymax}
-	p.frame(tr, "Queue size over time (measured)", "seconds after burst", "analyses waiting", func(v float64) string { return fmt.Sprintf("%.0f", v) })
+	p.frame(tr, "Queue size over time (measured)", "seconds elapsed", "analyses waiting", func(v float64) string { return fmt.Sprintf("%.0f", v) })
 	var labels []string
 	var lcols [][3]int
 	for _, n := range names {

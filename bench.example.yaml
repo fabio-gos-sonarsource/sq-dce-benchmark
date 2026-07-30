@@ -10,41 +10,36 @@ targets:
     url:   https://sonarqube-dce.example.com
     token: squ_yyyyyyyyyyyyyyyyyyyyyyyy
 
+# Your developer count — the main knob. It sets the production-model peak in the report
+# AND the rate of the default sustained load (peak = devs x analyses/day x peak%).
+devs: 5000
+
 # --- optional (defaults shown; uncomment to change) --------------------------
-# sample: mixed           # default: realistic 80% PR + 20% full. Or: js (React ~98k) | java (jackson-databind ~76k)
-# n: 40                   # analyses fired per target (burst size)
-# concurrency: 12         # parallel submissions during the burst
+# sample: mixed           # bundled seed: mixed (80% PR + 20% full) | js (React) | java (jackson-databind)
 # report: sq-ee-dce-benchmark.pdf
+# concurrency: 12         # parallel submissions
+
+# Load: by default a SUSTAINED load at your modelled peak (from devs above) for 60s.
+# Leave this section commented to use the default. To change it:
+# mode: burst             # switch to a one-shot burst of `n` analyses
+# n: 40                   # burst size (only used with mode: burst)
+# load:                   # override the sustained rate/duration (advanced)
+#   rate_per_min: 300
+#   duration_sec: 60
 
 # Benchmark YOUR OWN repo instead of a bundled sample.
-# (Only this mode needs a scanner: SonarScanner CLI, or JDK + Maven/Gradle for Java.
-#  .NET is not supported.)
+# (Only this mode needs a scanner: SonarScanner CLI, or JDK + Maven/Gradle for Java. .NET unsupported.)
 # seed_repo: /path/to/your/repo
 # scan_mode: auto         # auto | maven | gradle | cli
 # java_home: /path/to/jdk17   # if the project needs a specific JDK
 # build_args: "-P profile"    # extra mvn/gradle args (build profile / module selection)
-# pr_mix: true            # also replay a smaller, auto-picked slice of the repo as PR-sized
-#                         # analyses (80% PR + 20% full) so the load mirrors real traffic.
-#                         # Falls back to full-scan-only if a slice can't be produced.
+# pr_mix: true            # also replay an auto-picked PR-sized slice (80% PR + 20% full);
+#                         # falls back to full-scan-only if a slice can't be produced
 
-# Sustained load instead of a one-shot burst: submit at a steady rate for a while.
-# This is the regime where a single EE node saturates (queue grows) while a bigger DCE
-# cluster keeps up (queue stays flat). Use a light (PR-sized) seed and adequate hardware.
-# load:
-#   rate_per_min: 300     # analyses submitted per minute
-#   duration_sec: 300     # for how long
-
-# --- Production model ------------------------------------------------------
-# The report ALWAYS includes the model (capacity + feedback-delay chart + a plain
-# "does one EE node keep up at your peak?" verdict). To size it for your org, the
-# only knob most people change is the developer count — just set it here:
-devs: 5000
-# analyses_per_dev_day: 15   # optional (default 15)
-# peak_fraction: 0.25        # optional — share of the day's analyses in the busiest hour (default 0.25)
-#
-# Advanced: model a realistic PR/branch CE-time blend instead of the single measured
-# value (real traffic is mostly cheap PR analyses plus some full branch analyses):
-# model:
+# Fine-tune the production model (optional; devs above is usually enough):
+# analyses_per_dev_day: 15   # default 15
+# peak_fraction: 0.25        # share of the day's analyses in the busiest hour (default 0.25)
+# model:                     # advanced: blend PR + branch CE times instead of the measured value
 #   pr_fraction: 0.8         # share that are PRs (also sets the mixed-seed split)
-#   pr_ce_seconds: 0.5       # CE time for a typical PR analysis
-#   branch_ce_seconds: 8     # CE time for a full/branch analysis
+#   pr_ce_seconds: 0.5
+#   branch_ce_seconds: 8

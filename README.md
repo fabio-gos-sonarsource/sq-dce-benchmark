@@ -106,9 +106,12 @@ With `bench.yaml` next to the binary, just **double-click `run.command` (macOS) 
 next to the binary.)
 
 Per target it will: get the seed report (a bundled sample, or scan your `seed_repo`) →
-validate one replay (fail fast if versions differ) → pre-create N projects → replay N in
-parallel while sampling the queue every second → collect `api/ce/activity` metrics →
+validate one replay (fail fast if versions differ) → pre-create the projects → replay the
+workload while sampling the queue every second → collect `api/ce/activity` metrics →
 delete the bench projects. Then it writes the comparison **PDF** (`report:` path).
+
+By default the workload is a **sustained load at your modelled peak** (see below), not a
+one-shot burst.
 
 Outputs (the PDF and `results_file`) are written **next to the binary** by default: a
 relative path resolves to the executable's folder, not the launch directory — so a
@@ -132,23 +135,30 @@ Clean up anytime (e.g. after an interrupted run):
 ./sq-benchmark cleanup
 ```
 
-### Sustained load (vs a one-shot burst)
+### Load: sustained at your modelled peak (default)
 
-A one-shot burst of `n` only shows how fast a queue *drains*. To show whether an
-instance **keeps up with a steady stream** — the regime where a single EE node
-saturates (queue climbs and never recovers) while a bigger DCE cluster stays flat —
-add a `load:` block and the tool submits at a fixed rate for a set duration instead:
+By default the tool runs a **sustained load** for 60s at the peak rate implied by `devs`:
 
-```yaml
-load:
-  rate_per_min: 300     # analyses per minute
-  duration_sec: 300     # for how long
+```
+rate = devs × analyses_per_dev_day × peak_fraction ÷ 60      (5,000 devs → ~312/min)
 ```
 
-Run the **same rate** against EE and DCE: if the queue-over-time line climbs on EE
-but stays near zero on DCE, that's a real, measured throughput gap. It only appears
-when the rate exceeds one node's capacity, so use a light (PR-sized) seed and give the
-DCE cluster its own hardware — otherwise both just share the same cores.
+Set `devs` (or leave the default) and run — nothing else to configure. To override the
+rate or duration, add a `load:` block; for a one-shot burst instead, set `mode: burst`:
+
+```yaml
+# override the sustained rate/duration
+load:
+  rate_per_min: 300
+  duration_sec: 60
+
+# …or a quick burst instead
+mode: burst
+n: 40
+```
+
+Run the same load against EE and DCE, and give the DCE cluster its own hardware for a
+fair result.
 
 ## Example run & output
 
@@ -156,8 +166,8 @@ A filled-in `bench.yaml` (tokens redacted):
 
 ```yaml
 seed_repo: /repos/acme-web          # a representative ~78K-ncloc service
-n: 40
-concurrency: 12
+pr_mix: true                        # replay a realistic PR + full mix of it
+devs: 5000                          # sizes the model + the default sustained rate
 scan_mode: auto
 namespace: ee_vs_dce_benchmark_test
 report: ./acme-ee-vs-dce.pdf
