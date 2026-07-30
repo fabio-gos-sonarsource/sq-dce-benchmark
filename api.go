@@ -64,7 +64,7 @@ func post(t Target, path string, q url.Values) (*http.Response, error) {
 
 // getJSON does a GET and decodes JSON into v, RETRYING transient failures
 // (connection resets, empty/truncated bodies, invalid JSON, 5xx/429) — common on
-// flaky tunnels like ngrok's free tier under load. Auth failures (401/403) are fatal
+// flaky networks or a proxy/load balancer under load. Auth failures (401/403) are fatal
 // immediately. Used for read-only calls whose result we can't afford to lose (e.g.
 // collecting metrics after the burst).
 func getJSON(t Target, path string, q url.Values, what string, v any) {
@@ -101,8 +101,8 @@ func getJSON(t Target, path string, q url.Values, what string, v any) {
 		}
 	}
 	die("[%s] failed after 5 attempts (last: %s).\n"+
-		"  If this is an ngrok tunnel, the free tier can drop large responses under load — retry, or "+
-		"use a direct URL / paid tunnel.", what, last)
+		"  Check the instance is reachable and healthy, then retry. A proxy or load balancer "+
+		"in front of it may also drop large responses under load.", what, last)
 }
 
 // validateToken is the preflight: token authenticates AND has global Administer System.
