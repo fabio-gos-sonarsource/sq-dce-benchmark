@@ -52,7 +52,7 @@ type Config struct {
 	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> bundled sample
 	Sample       string            `yaml:"sample"`    // bundled sample when seed_repo is empty: js | java | mixed
 	PRMix        bool              `yaml:"pr_mix"`    // seed_repo: also replay an auto-picked PR-sized slice (80/20)
-	N            int               `yaml:"n"`
+	Burst        int               `yaml:"burst"`     // >0 -> one-shot burst of N analyses; else sustained (default)
 	Concurrency  int               `yaml:"concurrency"`
 	ScanMode     string            `yaml:"scan_mode"`
 	ScannerCLI   string            `yaml:"scanner_cli"`
@@ -119,6 +119,55 @@ func (c *Config) reportPath() string {
 	return resolveOutput(p)
 }
 
+// isBurst reports whether a one-shot burst was chosen (burst: N); default is sustained.
+func (c *Config) isBurst() bool { return c.Burst > 0 }
+
+// sizing returns the effective production-model figures — top-level keys first, then a
+// legacy model: block, then defaults — and the derived peak (analyses/hour).
+func (c *Config) sizing() (devs int, apd, pf, peakPerHour float64) {
+	var mdl Model
+	if c.Model != nil {
+		mdl = *c.Model
+	}
+	d := firstPosInt(c.Devs, mdl.Devs, 5000)
+	apd = firstPosF(c.AnalysesPerDevDay, mdl.AnalysesPerDevDay, 15)
+	pf = firstPosF(c.PeakFraction, mdl.PeakFraction, 0.25)
+	return d, apd, pf, float64(d) * apd * pf
+}
+
+// sustainedPlan returns the rate (per minute) and duration for the sustained run. It uses
+// an explicit load: block when given, otherwise the modelled peak (from devs) for 60s.
+// atPeak is true when the rate came from the model rather than an explicit load:.
+func (c *Config) sustainedPlan() (ratePerMin, durationSec int, atPeak bool) {
+	if c.Load != nil && c.Load.RatePerMin > 0 {
+		ratePerMin = c.Load.RatePerMin
+	} else {
+		_, _, _, peak := c.sizing()
+		ratePerMin = int(peak / 60.0)
+		if ratePerMin < 1 {
+			ratePerMin = 1
+		}
+		atPeak = true
+	}
+	durationSec = 60
+	if c.Load != nil && c.Load.DurationSec > 0 {
+		durationSec = c.Load.DurationSec
+	}
+	return
+}
+
+// runDesc is the one-line workload description used in the report subtitle.
+func (c *Config) runDesc() string {
+	if c.isBurst() {
+		return fmt.Sprintf("Burst of N=%d analyses", c.Burst)
+	}
+	rpm, dur, atPeak := c.sustainedPlan()
+	if atPeak {
+		return fmt.Sprintf("Sustained load at modelled peak (~%d/min for %ds)", rpm, dur)
+	}
+	return fmt.Sprintf("Sustained load (%d/min for %ds)", rpm, dur)
+}
+
 func die(format string, a ...any) {
 	fmt.Fprintf(os.Stderr, format+"\n", a...)
 	os.Exit(1)
@@ -142,9 +191,6 @@ func loadConfig(path string) *Config {
 		}
 	}
 	// defaults so the user only has to fill in targets
-	if c.N == 0 {
-		c.N = 40
-	}
 	if c.Namespace == "" {
 		c.Namespace = "sq_ee_dce_benchmark"
 	}

@@ -14,13 +14,10 @@ func renderModel(pdf *gofpdf.Fpdf, tr func(string) string, cfg *Config, results 
 	if mdl == nil {
 		mdl = &Model{}
 	}
-	// Sizing knobs: prefer the top-level shortcuts (devs / analyses_per_dev_day /
-	// peak_fraction), fall back to a legacy model: block, then to sensible defaults.
-	devs := firstPosInt(cfg.Devs, mdl.Devs, 5000)
-	apd := firstPosF(cfg.AnalysesPerDevDay, mdl.AnalysesPerDevDay, 15)
-	pf := firstPosF(cfg.PeakFraction, mdl.PeakFraction, 0.25)
+	// Sizing knobs (top-level shortcuts > legacy model: block > defaults). Shared with the
+	// default sustained rate so the modelled peak and the load actually driven agree.
+	devs, apd, pf, peak := cfg.sizing()
 	daily := float64(devs) * apd
-	peak := daily * pf
 
 	var T float64
 	var tSource string

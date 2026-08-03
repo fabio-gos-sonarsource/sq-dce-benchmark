@@ -389,19 +389,29 @@ func runTarget(t Target, cfg *Config) Metrics {
 	}
 	fmt.Printf("  ✓ replay valid (%s)\n", info)
 
-	// workload: a sustained arrival rate (load:) or a one-shot burst (n)
-	sustained := cfg.Load != nil && cfg.Load.RatePerMin > 0 && cfg.Load.DurationSec > 0
-	count := cfg.N
+	// workload: SUSTAINED at the modelled peak by default (the regime that shows DCE
+	// keeping up where a single EE node saturates); `mode: burst` runs a one-shot burst.
+	sustained := !cfg.isBurst()
+	count := cfg.Burst // used only when burst; isBurst() guarantees Burst > 0
 	ratePerSec := 0.0
+	loadDesc := ""
 	if sustained {
-		ratePerSec = float64(cfg.Load.RatePerMin) / 60.0
-		count = int(ratePerSec * float64(cfg.Load.DurationSec))
+		ratePerMin, durationSec, atPeak := cfg.sustainedPlan()
+		ratePerSec = float64(ratePerMin) / 60.0
+		count = int(ratePerSec * float64(durationSec))
 		if count < 1 {
 			count = 1
 		}
 		if count > 5000 {
-			fmt.Println("  (capping sustained load to 5000 analyses — lower rate_per_min or duration_sec)")
+			fmt.Println("  (capping sustained load to 5000 analyses — lower the rate or duration)")
 			count = 5000
+		}
+		if atPeak {
+			d, a, p, _ := cfg.sizing()
+			loadDesc = fmt.Sprintf("sustained load at your modelled peak: %d/min for %ds (~%d analyses) "+
+				"[%s devs × %s/day × %.0f%% in peak hour]", ratePerMin, durationSec, count, commas(float64(d)), trimF(a), p*100)
+		} else {
+			loadDesc = fmt.Sprintf("sustained load: %d/min for %ds (~%d analyses)", ratePerMin, durationSec, count)
 		}
 	}
 	keys := make([]string, count)
@@ -432,7 +442,7 @@ func runTarget(t Target, cfg *Config) Metrics {
 	stop := startSampler(t)
 	var failed int
 	if sustained {
-		fmt.Printf("  sustained load: %d/min for %ds (~%d analyses) ...\n", cfg.Load.RatePerMin, cfg.Load.DurationSec, count)
+		fmt.Printf("  %s ...\n", loadDesc)
 		failed = fireSustained(t, keys, zips, ratePerSec)
 	} else {
 		fmt.Printf("  firing burst (N=%d, concurrency=%d) ...\n", count, cfg.concurrency())
