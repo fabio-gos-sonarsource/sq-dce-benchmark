@@ -19,11 +19,10 @@ devs: 5000
 # report: sq-ee-dce-benchmark.pdf
 # concurrency: 12         # parallel submissions
 
-# Load: by default a SUSTAINED load at your modelled peak (from devs above) for 60s.
-# Leave this section commented to use the default. To change it:
-# mode: burst             # switch to a one-shot burst of `n` analyses
-# n: 40                   # burst size (only used with mode: burst)
-# load:                   # override the sustained rate/duration (advanced)
+# Load: sustained at your modelled peak (from devs above) for 60s — the default.
+# Leave commented to use it.
+# burst: 40               # run a one-shot burst of N analyses instead
+# load:                   # or override the sustained rate/duration (advanced)
 #   rate_per_min: 300
 #   duration_sec: 60
 

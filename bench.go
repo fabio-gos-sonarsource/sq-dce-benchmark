@@ -392,10 +392,7 @@ func runTarget(t Target, cfg *Config) Metrics {
 	// workload: SUSTAINED at the modelled peak by default (the regime that shows DCE
 	// keeping up where a single EE node saturates); `mode: burst` runs a one-shot burst.
 	sustained := !cfg.isBurst()
-	count := cfg.N
-	if count < 1 {
-		count = 40
-	}
+	count := cfg.Burst // used only when burst; isBurst() guarantees Burst > 0
 	ratePerSec := 0.0
 	loadDesc := ""
 	if sustained {

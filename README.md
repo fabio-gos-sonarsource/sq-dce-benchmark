@@ -144,7 +144,7 @@ rate = devs × analyses_per_dev_day × peak_fraction ÷ 60      (5,000 devs → 
 ```
 
 Set `devs` (or leave the default) and run — nothing else to configure. To override the
-rate or duration, add a `load:` block; for a one-shot burst instead, set `mode: burst`:
+rate or duration, add a `load:` block; for a one-shot burst instead, set `burst:`:
 
 ```yaml
 # override the sustained rate/duration
@@ -152,9 +152,8 @@ load:
   rate_per_min: 300
   duration_sec: 60
 
-# …or a quick burst instead
-mode: burst
-n: 40
+# …or a one-shot burst instead
+burst: 40
 ```
 
 Run the same load against EE and DCE, and give the DCE cluster its own hardware for a

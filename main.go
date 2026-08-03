@@ -52,8 +52,7 @@ type Config struct {
 	SeedRepo     string            `yaml:"seed_repo"` // your own repo to scan; empty -> bundled sample
 	Sample       string            `yaml:"sample"`    // bundled sample when seed_repo is empty: js | java | mixed
 	PRMix        bool              `yaml:"pr_mix"`    // seed_repo: also replay an auto-picked PR-sized slice (80/20)
-	Mode         string            `yaml:"mode"`      // "" / sustained (default) | burst
-	N            int               `yaml:"n"`
+	Burst        int               `yaml:"burst"`     // >0 -> one-shot burst of N analyses; else sustained (default)
 	Concurrency  int               `yaml:"concurrency"`
 	ScanMode     string            `yaml:"scan_mode"`
 	ScannerCLI   string            `yaml:"scanner_cli"`
@@ -120,8 +119,8 @@ func (c *Config) reportPath() string {
 	return resolveOutput(p)
 }
 
-// isBurst reports whether the one-shot burst mode was chosen (default is sustained).
-func (c *Config) isBurst() bool { return strings.EqualFold(c.Mode, "burst") }
+// isBurst reports whether a one-shot burst was chosen (burst: N); default is sustained.
+func (c *Config) isBurst() bool { return c.Burst > 0 }
 
 // sizing returns the effective production-model figures — top-level keys first, then a
 // legacy model: block, then defaults — and the derived peak (analyses/hour).
@@ -160,11 +159,7 @@ func (c *Config) sustainedPlan() (ratePerMin, durationSec int, atPeak bool) {
 // runDesc is the one-line workload description used in the report subtitle.
 func (c *Config) runDesc() string {
 	if c.isBurst() {
-		n := c.N
-		if n < 1 {
-			n = 40
-		}
-		return fmt.Sprintf("Burst of N=%d analyses", n)
+		return fmt.Sprintf("Burst of N=%d analyses", c.Burst)
 	}
 	rpm, dur, atPeak := c.sustainedPlan()
 	if atPeak {
@@ -196,9 +191,6 @@ func loadConfig(path string) *Config {
 		}
 	}
 	// defaults so the user only has to fill in targets
-	if c.N == 0 {
-		c.N = 40
-	}
 	if c.Namespace == "" {
 		c.Namespace = "sq_ee_dce_benchmark"
 	}
