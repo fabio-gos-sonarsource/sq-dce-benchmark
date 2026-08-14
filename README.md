@@ -242,9 +242,9 @@ manufacturing a throughput gap.
 | File | Purpose |
 |---|---|
 | `sq-benchmark` | the CLI binary (`run` / `cleanup` / `report` / `version`) |
-| `run.command` / `run.bat` | double-click launchers (macOS / Windows) |
+| `run.command` / `run.bat` | double-click launchers (macOS / Windows) — shipped in the release zip; the sources live in `packaging/` |
 | `bench.example.yaml` | config template (copy to `bench.yaml`) |
-| `build-release.sh` | cross-compile the binaries for all platforms |
+| `build-release.sh` | cross-compile the binaries for all platforms into `dist/<version>/` |
 | `*.go`, `go.mod`, `go.sum` | Go sources — only needed to build from source |
 | `seeds/` | bundled pre-scanned sample reports (`js` = React, `java` = jackson-databind, `mixed` = PR + full replay) + their licences |
 
