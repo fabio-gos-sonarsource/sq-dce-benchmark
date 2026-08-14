@@ -1,5 +1,7 @@
-# secrets — never commit tokens
+# secrets — never commit tokens (bench.yaml and any backup/variant of it)
 bench.yaml
+bench.yaml.*
+bench-*.yaml
 
 # generated output
 *.pdf
